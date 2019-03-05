@@ -1,0 +1,216 @@
+#!/bin/sh
+
+NAME=managers
+
+PLUME_BASE_DIR="/usr/plume"
+
+PLUME_BIN_DIR="${PLUME_BASE_DIR}/bin"
+PLUME_ETC_DIR="${PLUME_BASE_DIR}/etc"
+PLUME_RUN_DIR="/var/run/plume"
+
+OVS_RUN_DIR=/var/run/openvswitch
+OVS_ETC_DIR=/tmp/etc/openvswitch
+PLUME_OVSH="${PLUME_BASE_DIR}/tools/ovsh"
+
+LM_TRIGGER_DIR="/tmp/lm/trigger"
+
+RUN_USER="root"
+
+. $PLUME_BASE_DIR/scripts/platform.funcs
+
+gre_filter() {
+    awk '
+    /[0-9]+: ([^:])+:/ {
+        IF=substr($2, 1, index($2, "@") - 1)
+    }
+
+    / +gretap remote/ {
+        print IF
+    }'
+}
+
+gre_cleanup() {
+    ip -d link show | gre_filter | while read IF; do
+        if [ ${#IF} -gt 0 ]; then
+            echo "Removing GRE tunnel: $IF"
+            ip link del "$IF"
+        fi
+    done
+}
+
+ovs_start() {
+    if [ ! -d ${OVS_RUN_DIR} ]; then
+        mkdir -p ${OVS_RUN_DIR} && chown ${RUN_USER} ${OVS_RUN_DIR}
+    fi
+
+    if [ ! -d ${OVS_ETC_DIR} ]; then
+        mkdir -p ${OVS_ETC_DIR} && chown ${RUN_USER} ${OVS_ETC_DIR}
+    fi
+
+    echo "Starting OpenSync OVSDB management"
+
+    # reset non-persistent DB
+    cp -f ${PLUME_ETC_DIR}/conf.db.bck ${OVS_ETC_DIR}/conf.db && chown ${RUN_USER} ${OVS_ETC_DIR}/conf.db
+
+    # ovsdb-server start against non-persistent DB
+    for x in /usr/sbin/ovsdb-server /tmp/plume_dnld/usr/sbin/ovsdb-server; do
+        if [ -x "$x" ]; then
+            OVSDB_SERVER="$x"
+            break
+        fi
+    done
+    if [ ${#OVSDB_SERVER} -eq 0 -o ! -x ${OVSDB_SERVER} ]; then
+        echo "ERROR: Unable to locate ovsdb-server binary"
+        return 1
+    fi
+    start-stop-daemon -c ${RUN_USER} -S -b -x ${OVSDB_SERVER} -- \
+        --remote=punix:${OVS_RUN_DIR}/db.sock \
+        --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+        --private-key=db:Open_vSwitch,SSL,private_key \
+        --certificate=db:Open_vSwitch,SSL,certificate \
+        --ca-cert=db:Open_vSwitch,SSL,ca_cert \
+        --pidfile=${OVS_RUN_DIR}/ovsdb-server.pid \
+        --log-file=/dev/null \
+        --unixctl=${OVS_RUN_DIR}/ovsdb-server.ctl \
+        ${OVS_ETC_DIR}/conf.db
+
+    # ovs-vswitchd (optional: If found)
+    for x in /usr/sbin/ovs-vswitchd /tmp/plume_dnld/usr/sbin/ovs-vswitchd; do
+        if [ -x "$x" ]; then
+            OVS_VSWITCHD="$x"
+            break
+        fi
+    done
+    if [ ${#OVS_VSWITCHD} -gt 0 -a -x ${OVS_VSWITCHD} ]; then
+        echo "Starting OVS Switch Daemon"
+        start-stop-daemon -c ${RUN_USER} -S -b -x ${OVS_VSWITCHD} -- \
+        --pidfile=${OVS_RUN_DIR}/ovs-vswitchd.pid
+    fi
+}
+
+ovs_stop() {
+    echo "Stopping OpenSync OVSDB management"
+
+    # ovs-vswitchd
+    if pidof ovs-vswitchd > /dev/null; then
+        echo "Stopping OVS Switch Daemon"
+        killall -s SIGTERM ovs-vswitchd
+        sleep 1
+        if pidof ovs-vswitchd > /dev/null; then
+            echo "   ...forcing"
+            killall -s SIGKILL ovs-vswitchd
+        fi
+    fi
+
+    # ovsdb-server
+    killall -s SIGKILL ovsdb-server
+
+    # remove pre-populated db conf.db from ramdisk
+    if [ -d ${OVS_RUN_DIR} ]; then
+        rm -r ${OVS_RUN_DIR}
+    fi
+    if [ -d ${OVS_ETC_DIR} ]; then
+        rm -r ${OVS_ETC_DIR}
+    fi
+}
+
+plume_start() {
+    platform_prereq_check || return 1
+
+    if [ ! -d ${PLUME_RUN_DIR} ]; then
+        mkdir -p ${PLUME_RUN_DIR} && chown ${RUN_USER} ${PLUME_RUN_DIR}
+    fi
+    if [ ! -d ${LM_TRIGGER_DIR} ]; then
+        mkdir -p ${LM_TRIGGER_DIR} && chown ${RUN_USER} ${LM_TRIGGER_DIR}
+    fi
+
+    platform_start
+
+    if [ -x ${PLUME_BIN_DIR}/pl2rld ]; then
+        echo "Starting OpenSync Logger to RDK Logger Daemon"
+        start-stop-daemon -c ${RUN_USER} -S -b -x ${PLUME_BIN_DIR}/pl2rld
+    fi
+
+    echo "Starting OpenSync managers"
+    start-stop-daemon -c ${RUN_USER} -S -b -x ${PLUME_BIN_DIR}/dm
+    sleep 10
+    managers="DM WM SM CM LM BM QM OM FSM"
+    ${PLUME_OVSH} d AW_Debug
+    for m in $managers
+    do
+        ${PLUME_OVSH} i AW_Debug name:=$m log_severity:=CRIT
+    done
+    sleep 3
+    ${PLUME_OVSH} i AW_Debug name:=NM log_severity:=CRIT
+}
+
+plume_stop() {
+    echo "Stopping OpenSync managers"
+    killall -s SIGKILL dm wm sm cm nm lm bm qm om pl2rld
+    gre_cleanup
+    platform_stop
+}
+
+action() {
+    case "$1" in
+        "ovs-start")
+            ovs_start
+            RET=$?
+            ;;
+
+        "ovs-stop")
+            ovs_stop
+            RET=$?
+            ;;
+
+        "ovs-restart")
+            action ovs-stop
+            action ovs-start
+            RET=$?
+            ;;
+
+        "plume-start")
+            plume_start
+            RET=$?
+            ;;
+
+        "plume-stop")
+            plume_stop
+            RET=$?
+            ;;
+
+        "plume-restart")
+            action plume-stop
+            action plume-start
+            RET=$?
+            ;;
+
+        "start")
+            ovs_start && sleep 2 && plume_start
+            RET=$?
+            ;;
+
+        "stop")
+            plume_stop
+            ovs_stop
+            RET=$?
+            ;;
+
+        "restart")
+            action stop && action start
+            RET=$?
+            ;;
+
+        *)
+            echo "Usage: $0 {start|stop|restart}"
+            echo "       $0 {ovs-start|ovs-stop|ovs-restart}"
+            echo "       $0 {plume-start|plume-stop|plume-restart}"
+            RET=1
+            ;;
+
+    esac
+
+    return $RET
+}
+
+action "$1"

@@ -1,0 +1,16 @@
+# Platform functions -- Default Skeleton
+
+platform_prereq_check() {
+    # Check to see if prerequisites are met.  Won't start managers if 1 is returned
+    return 0
+}
+
+platform_start() {
+    # Called just before starting managers
+    return 0
+}
+
+platform_stop() {
+    # Called after stopping managers
+    return 0
+}
