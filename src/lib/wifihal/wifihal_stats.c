@@ -237,8 +237,6 @@ bool wifihal_stats_client_fetch(
     memcpy(&client_entry->stats_rx, stats_rx, sizeof(*stats_rx) * client_entry->num_rx);
     free(stats_rx);
 
-    client_entry->stats_cookie = handle;
-
     WIFIHAL_TM_START();
     ret = wifi_getApAssociatedDeviceTxStatsResult(
             statIndex,
@@ -261,6 +259,8 @@ bool wifihal_stats_client_fetch(
     WIFIHAL_TM_STOP(ret, WIFIHAL_STD_TIME, "wifi_getApAssociatedDeviceTidStatsResult(%d, \"%s\")",
                                             statIndex, mac_str);
     if (ret != RETURN_OK) goto err;
+
+    client_entry->stats_cookie = handle;
 
 out:
     ds_dlist_insert_tail(client_list, client_entry);
@@ -358,6 +358,12 @@ bool wifihal_stats_clients_convert(
 
 #define ADD_DELTA_TO(A,X,Y) \
     do { \
+        if (data_old->Y > data_new->Y) { \
+            LOGI("Inconsistent data from driver for %s: %lld > %lld. Skipping.",\
+                                                    #Y, data_old->Y, data_new->Y); \
+            data_old->Y = 0; \
+            data_new->Y = 0; \
+        } \
         A->X = GET_DELTA(Y); \
         LOG(TRACE, "Client %s stats %s=%llu (delta  %llu - %llu = %llu)", \
                 mac_str, #X, (uint64_t)A->X, \
@@ -386,15 +392,21 @@ bool wifihal_stats_clients_convert(
 
     // STATS
 
-    // Some drivers reset stats at reconnect and we do not notice that. Until
-    // they add connection cookie or some other way of reconnect indication
-    // we shall assume that if all stats are overlapped it is a reconnect.
-    if (   (data_new->stats.cli_tx_bytes < data_old->stats.cli_tx_bytes)
-        && (data_new->stats.cli_rx_bytes < data_old->stats.cli_rx_bytes)
-        && (data_new->stats.cli_tx_frames < data_old->stats.cli_tx_frames)
-        && (data_new->stats.cli_rx_frames < data_old->stats.cli_rx_frames) )
+    if (data_new->stats_cookie != data_old->stats_cookie)
     {
+        // This a new connection since last stats reading, so the
+        // deltas cannot be calculated against the old one.
+        // Calculate deltas against "0", so effectively just return
+        // whatever the driver reported with the last stat reading.
+
+        LOGD("New connection - clear old stat records");
         memset(&data_old->stats, 0, sizeof(data_old->stats));
+        memset(&data_old->dev2, 0, sizeof(data_old->dev2));
+        memset(&data_old->stats_rx, 0, sizeof(data_old->stats_rx));
+        memset(&data_old->stats_tx, 0, sizeof(data_old->stats_tx));
+        memset(&data_old->tid_stats, 0, sizeof(data_old->tid_stats));
+        data_old->num_rx = 0;
+        data_old->num_tx = 0;
     }
 
     ADD_DELTA(stats.bytes_tx,   stats.cli_tx_bytes);
@@ -432,6 +444,12 @@ bool wifihal_stats_clients_convert(
 
 #define ADD_DELTA_RX(X,Y) \
     do { \
+        if (OLD_RX(Y) > NEW_RX(Y)) { \
+            LOGI("Inconsistent data from driver for %s: %lld > %lld. Skipping.",\
+                                                    #Y, OLD_RX(Y), NEW_RX(Y)); \
+            if (o >= 0) data_old->stats_rx[o].Y = 0; \
+            if (n >= 0) data_new->stats_rx[n].Y = 0; \
+        } \
         DPP_RX(X) += GET_DELTA_RX(Y); \
         LOG(TRACE, "Client %s stats_rx [%d %d %d] %s=%llu (delta %llu - %llu = %llu)", \
                 mac_str, DPP_RX(bw), DPP_RX(nss), DPP_RX(mcs), #X, (uint64_t)DPP_RX(X), \
@@ -537,6 +555,12 @@ bool wifihal_stats_clients_convert(
 
 #define ADD_DELTA_TX(X,Y) \
     do { \
+        if (OLD_TX(Y) > NEW_TX(Y)) { \
+            LOGI("Inconsistent data from driver for %s: %lld > %lld. Skipping.",\
+                                                    #Y, OLD_TX(Y), NEW_TX(Y)); \
+            if (o >= 0) data_old->stats_tx[o].Y = 0; \
+            if (n >= 0) data_new->stats_tx[n].Y = 0; \
+        } \
         DPP_TX(X) = GET_DELTA_TX(Y); \
         LOG(TRACE, "Client %s stats_tx [%d %d %d] %s=%llu (delta %llu - %llu = %llu)", \
                 mac_str, DPP_TX(bw), DPP_TX(nss), DPP_TX(mcs), #X, (uint64_t)DPP_TX(X), \

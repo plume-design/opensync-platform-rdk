@@ -1381,7 +1381,7 @@ target_inet_state_register(
 }
 
 bool
-target_mac_learning_register(void *maclearn_cb)
+target_mac_learning_register(target_mac_learning_cb_t* maclearn_cb)
 {
     return wifihal_maclearn_init(maclearn_cb);
 }

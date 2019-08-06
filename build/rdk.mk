@@ -33,6 +33,12 @@ CPU_TYPE = $(RDK_TARGET_ARCH)
 CFLAGS += -Wno-error=cpp
 CFLAGS += -I$(PKG_CONFIG_SYSROOT_DIR)/usr/include/protobuf-c
 
+# Yocto takes care of packaging stripped and unstripped binaries on its own,
+# and generates 2 packages: with and without debug symbols.
+# Also, Yocto fills in STRIP, which we use internally for stripping,
+# which conflicts with Yocto's assumptions.
+STRIP=
+
 #
 # Features (1 = Enabled, 0 = Disabled)
 #

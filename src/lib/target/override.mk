@@ -46,6 +46,7 @@ UNIT_SRC_TOP += $(UNIT_SRC_DIR)/vif.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/inet.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/stats.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/log.c
+UNIT_SRC_TOP += $(UNIT_SRC_DIR)/bsal.c
 
 UNIT_CFLAGS  += -I$(OVERRIDE_DIR)/inc
 

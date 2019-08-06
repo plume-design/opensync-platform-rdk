@@ -183,9 +183,7 @@ bool target_stats_clients_get(
         return false;
     }
 
-    (*client_cb)(client_list, client_ctx, true);
-
-    return true;
+    return (*client_cb)(client_list, client_ctx, true);
 }
 
 bool target_stats_clients_convert(
