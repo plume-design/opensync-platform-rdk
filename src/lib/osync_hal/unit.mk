@@ -22,56 +22,18 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-UNIT_NAME := wifihal
+UNIT_NAME := osync_hal
 
-UNIT_DISABLE := !RDKB
+UNIT_TYPE := LIB
 
-UNIT_TYPE   := LIB
+UNIT_DEPS := src/lib/common
 
-# List of source files, relative to the unit folder
-UNIT_SRC    := wifihal.c
-UNIT_SRC    += wifihal_radio.c
-UNIT_SRC    += wifihal_vif.c
-UNIT_SRC    += wifihal_security.c
-UNIT_SRC    += wifihal_acl.c
-UNIT_SRC    += wifihal_clients.c
-UNIT_SRC    += wifihal_sync.c
-UNIT_SRC    += wifihal_cloud_mode.c
-UNIT_SRC    += wifihal_stats.c
-UNIT_SRC    += wifihal_health.c
-UNIT_SRC    += wifihal_maclearn.c
-ifeq ($(WPA_CLIENTS),1)
-UNIT_SRC    += wifihal_clients_wpa.c
-else
-UNIT_SRC    += wifihal_clients_hal.c
-endif
+UNIT_SRC := src/init.c
+UNIT_SRC += src/clients.c
+UNIT_SRC += src/dhcp.c
+UNIT_SRC += src/inet.c
+UNIT_SRC += src/devinfo.c
 
-UNIT_CFLAGS := -I$(UNIT_PATH)/inc
-UNIT_CFLAGS += -DENABLE_MESH_SOCKETS
-
-UNIT_LDFLAGS := $(SDK_LIB_DIR)  -lhal_wifi -lrt
-
-ifeq ($(WPA_CLIENTS),1)
-UNIT_LDFLAGS += $(RDK_FILE_WPA_CTRL_A)
-endif
-
-ifeq ($(QCA_WIFI),1)
-UNIT_CFLAGS += -DHOSTAPD_RECONFIG
-UNIT_CFLAGS += -DWAR_VIF_DISABLE
-endif
-
+UNIT_CFLAGS += -I$(UNIT_PATH)/inc
 
 UNIT_EXPORT_CFLAGS := $(UNIT_CFLAGS)
-UNIT_EXPORT_LDFLAGS := $(UNIT_LDFLAGS)
-
-UNIT_CFLAGS += -DCONTROLLER_ADDR="\"$(shell echo -n $(CONTROLLER_ADDR))\""
-
-UNIT_DEPS   := src/lib/ds
-UNIT_DEPS   += src/lib/common
-UNIT_DEPS   += src/lib/evsched
-UNIT_DEPS   += src/lib/schema
-UNIT_DEPS   += src/lib/const
-UNIT_DEPS   += $(PLATFORM_DIR)/src/lib/devinfo
-
-UNIT_DEPS_CFLAGS += src/lib/target
-UNIT_DEPS_CFLAGS += src/lib/datapipeline

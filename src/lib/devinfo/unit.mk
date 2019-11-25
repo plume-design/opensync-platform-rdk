@@ -24,8 +24,6 @@
 
 UNIT_NAME := devinfo
 
-UNIT_DISABLE := !RDKB
-
 UNIT_TYPE   := LIB
 
 # List of source files, relative to the unit folder

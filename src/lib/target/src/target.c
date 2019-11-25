@@ -26,17 +26,52 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stdio.h>
 
+#include "evsched.h"
 #include "os.h"
 #include "os_nif.h"
 #include "log.h"
 #include "const.h"
 
 #include "target.h"
-#include "wifihal.h"
+#include "target_internal.h"
 
+#include "osync_hal.h"
 
 #define MODULE_ID LOG_MODULE_ID_OSA
 
+// CSA deauth flags.  Possible values are:
+//      WIFI_CSA_DEAUTH_MODE_NONE
+//      WIFI_CSA_DEAUTH_MODE_UCAST
+//      WIFI_CSA_DEAUTH_MODE_BCAST
+#define CSA_DEAUTH_FLAG(x)      WIFI_CSA_DEAUTH_MODE_##x
+
+#define CSA_2G_BHAUL_DEAUTH     CSA_DEAUTH_FLAG(NONE)
+#define CSA_2G_OTHER_DEAUTH     CSA_DEAUTH_FLAG(BCAST)
+
+#define CSA_5G_BHAUL_DEAUTH     CSA_DEAUTH_FLAG(NONE)
+#define CSA_5G_OTHER_DEAUTH     CSA_DEAUTH_FLAG(NONE)
+
+#define CSA_DEAUTH_DEFAULT      CSA_DEAUTH_FLAG(NONE)
+
+typedef enum
+{
+    OSYNC_BAND_2G,
+    OSYNC_BAND_5G,
+    OSYNC_BAND_UNKNOWN
+} osync_band_t;
+
+typedef enum
+{
+    OSYNC_BACKHAUL_IFACE_TYPE,
+    OSYNC_OTHER_IFACE_TYPE,
+    OSYNC_UNKNOWN_VAP_TYPE
+} osync_vap_type_t;
+
+typedef void (*devconf_cb_t)(
+        struct schema_AWLAN_Node *awlan,
+        schema_filter_t *filter);
+
+struct ev_loop *wifihal_evloop = NULL;
 
 /******************************************************************************
  *  TARGET definitions
@@ -46,126 +81,233 @@ bool target_ready(struct ev_loop *loop)
 {
     char        tmp[64];
 
-    if (!os_nif_is_interface_ready(BACKHAUL_IFNAME_2G)) {
-        LOGW("Target not ready, '%s' is not UP", BACKHAUL_IFNAME_2G);
+    if (osync_hal_ready() != OSYNC_HAL_SUCCESS)
+    {
+        LOGW("Target not ready, OSync HAL not ready");
         return false;
     }
 
-    if (!os_nif_is_interface_ready(BACKHAUL_IFNAME_5G)) {
-        LOGW("Target not ready, '%s' is not UP", BACKHAUL_IFNAME_5G);
-        return false;
-    }
+    // Check if we can read important entity information
 
-    // Check important entity information (also causes it to be cached)
-
-    if (!target_serial_get(ARRAY_AND_SIZE(tmp))) {
+    if (!target_serial_get(ARRAY_AND_SIZE(tmp)))
+    {
         LOGW("Target not ready, failed to query serial number");
         return false;
     }
 
-    if (!target_id_get(ARRAY_AND_SIZE(tmp))) {
+    if (!target_id_get(ARRAY_AND_SIZE(tmp)))
+    {
         LOGW("Target not ready, failed to query id (CM MAC)");
         return false;
     }
 
-    if (!target_model_get(ARRAY_AND_SIZE(tmp))) {
+    if (!target_model_get(ARRAY_AND_SIZE(tmp)))
+    {
         LOGW("Target not ready, failed to query model number");
         return false;
     }
 
-    if (!target_platform_version_get(ARRAY_AND_SIZE(tmp))) {
+    if (!target_platform_version_get(ARRAY_AND_SIZE(tmp)))
+    {
         LOGW("Target not ready, failed to query platform version");
+        return false;
+    }
+
+    wifihal_evloop = loop;
+
+    return true;
+}
+
+static osync_band_t vap_band(INT ssid_index)
+{
+    INT ret;
+    INT radio_index;
+    char band[64];  // Unfortunately there is no define for band length in wifi_hal.h
+                    // However, according to comment in that file, the maximum
+                    // length is 64 bytes.
+
+    ret = wifi_getSSIDRadioIndex(ssid_index, &radio_index);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: cannot get radio index for SSID %d\n", __func__, ssid_index);
+        return OSYNC_BAND_UNKNOWN;
+    }
+
+    memset(band, 0, sizeof(band));
+    ret = wifi_getRadioOperatingFrequencyBand(radio_index, band);
+
+    if (band[0] == '2')
+    {
+        return OSYNC_BAND_2G;
+    }
+    if (band[0] == '5')
+    {
+        return OSYNC_BAND_5G;
+    }
+
+    return OSYNC_BAND_UNKNOWN;
+}
+
+static osync_vap_type_t vap_type(const char *ssid)
+{
+    char *unmapped_ifname;
+
+    unmapped_ifname = target_unmap_ifname((char *)ssid);
+    if (!strncmp(unmapped_ifname, "bhaul-", 6))
+    {
+        return OSYNC_BACKHAUL_IFACE_TYPE;
+    }
+
+    return OSYNC_OTHER_IFACE_TYPE;
+}
+
+static bool set_csa_deauth(INT ssid_index, const char *ssid)
+{
+    INT ret;
+    uint32_t deauth_flags = CSA_DEAUTH_DEFAULT;
+
+    // We only set flags other than default to 2.4GHz non-backhaul VAPs
+    if ((vap_type(ssid) == OSYNC_OTHER_IFACE_TYPE) &&
+            vap_band(ssid_index) == OSYNC_BAND_2G)
+    {
+        deauth_flags = CSA_2G_OTHER_DEAUTH;
+    }
+
+    ret = wifi_setApCsaDeauth(ssid_index, deauth_flags);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: cannot set AP CSA Deauth flags %d for index %d\n", __func__,
+              deauth_flags, ssid_index);
         return false;
     }
 
     return true;
 }
 
-bool target_vif_inet_init(void);
+static bool set_deauth_and_scan_filter_flags()
+{
+    INT ret;
+    ULONG snum;
+    ULONG i;
+    char ssid[64];  // According to wifi_hal.h header the SSID is up to 16 bytes.
+                    // Allocate more just in case.
+
+    ret = wifi_getSSIDNumberOfEntries(&snum);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: failed to get SSID count", __func__);
+        return false;
+    }
+
+    if (snum == 0)
+    {
+        LOGE("%s: no SSIDs detected", __func__);
+        return false;
+    }
+
+    for (i = 0; i < snum; i++)
+    {
+        memset(ssid, 0, sizeof(ssid));
+        ret = wifi_getApName(i, ssid);
+        if (ret != RETURN_OK)
+        {
+            LOGW("%s: failed to get AP name for index %lu. Skipping.\n", __func__, i);
+            continue;
+        }
+
+        // Filter SSID's that we don't have mappings for
+        if (!target_unmap_ifname_exists(ssid))
+        {
+            LOGI("%s: Skipping VIF (no mapping exists)", ssid);
+            continue;
+        }
+        LOGI("Found SSID index %lu: %s", i, ssid);
+
+        if (!set_csa_deauth(i, ssid))
+        {
+            LOGE("Cannot set CSA for %s", ssid);
+            return false;
+        }
+
+        ret = wifi_setApScanFilter(i, WIFI_SCANFILTER_MODE_FIRST, NULL);
+        if (ret != RETURN_OK)
+        {
+            LOGE("%s: Failed to set scanfilter to WIFI_SCANFILTER_MODE_FIRST", ssid);
+            return false;
+        }
+        LOGI("%s: scanfilter set to WIFI_SCANFILTER_MODE_FIRST", ssid);
+    }
+
+    return true;
+}
+
 bool target_init(target_init_opt_t opt, struct ev_loop *loop)
 {
-    if (!target_map_ifname_init()) {
+    INT ret;
+    CHAR str[64];  // Unfortunately, the RDK Wifi HAL doesn't specify
+                   // the maximum length of version string. It is usually
+                   // something like "2.0.0", so assume 64 is enough.
+
+    if (!target_map_ifname_init())
+    {
         LOGE("Target init failed to initialize interface mapping");
+        return false;
+    }
+
+    if (osync_hal_init() != OSYNC_HAL_SUCCESS)
+    {
+        LOGE("OSync HAL init failed");
+        return false;
+    }
+
+    wifihal_evloop = loop;
+
+    ret = wifi_getHalVersion(str);
+    if (ret != RETURN_OK)
+    {
+        LOGE("Manager %d: cannot get HAL version", opt);
         return false;
     }
 
     switch (opt)
     {
-    case TARGET_INIT_MGR_SM:
-        /*
-         * Due to logging verbosity, it was requested that we "tone down"
-         * the messages coming from SM into RDK Logger.  Since we cannot set
-         * separate severities per logger type, we'll just tone it all down
-         * for now
-         */
-        log_module_severity_set(LOG_MODULE_ID_MAIN, LOG_SEVERITY_ERR);
-        log_module_severity_set(LOG_MODULE_ID_IOCTL, LOG_SEVERITY_ERR);
+        case TARGET_INIT_MGR_SM:
+            break;
 
-        if (!wifihal_init(loop, true)) {
-            // It reports the error
-            return false;
-        }
-        break;
+        case TARGET_INIT_MGR_WM:
+            if (evsched_init(loop) == false)
+            {
+                LOGE("Initializing WM "
+                        "(Failed to initialize EVSCHED)");
+                return -1;
+            }
 
-    case TARGET_INIT_MGR_WM:
-        // Change default log severity level
-        log_severity_set(LOG_SEVERITY_CRIT);
+            if (!sync_init(SYNC_MGR_WM))
+            {
+                // It reports the error
+                return false;
+            }
+            if (!set_deauth_and_scan_filter_flags())
+            {
+                LOGE("Failed to set csa_deauth and scan filter flags");
+                return false;
+            }
 
-        // Change severity of OVSDB module; it's extremely verbose
-        log_module_severity_set(LOG_MODULE_ID_OVSDB, LOG_SEVERITY_ERR);
+            break;
 
-        if (!wifihal_init(loop, true)) {
-            // It reports the error
-            return false;
-        }
-        if (!wifihal_sync_init(WIFIHAL_SYNC_MGR_WM)) {
-            // It reports the error
-            return false;
-        }
-        if (!wifihal_config_init()) {
-            // It reports the error
-            return false;
-        }
-        break;
+        case TARGET_INIT_MGR_CM:
+            if (!sync_init(SYNC_MGR_CM))
+            {
+                // It reports the error
+                return false;
+            }
+            break;
 
-    case TARGET_INIT_MGR_NM:
-        // Change severity of OVSDB module; it's extremely verbose
-        log_module_severity_set(LOG_MODULE_ID_OVSDB, LOG_SEVERITY_ERR);
+        case TARGET_INIT_MGR_BM:
+            break;
 
-        if (!target_vif_inet_init()) {
-            // It reports the error
-            return false;
-        }
-        if (!wifihal_init(loop, false)) {
-            // It reports the error
-            return false;
-        }
-        if (!wifihal_sync_init(WIFIHAL_SYNC_MGR_NM)) {
-            // It reports the error
-            return false;
-        }
-        break;
-
-    case TARGET_INIT_MGR_CM:
-        if (!wifihal_init(loop, false)) {
-            // It reports the error
-            return false;
-        }
-        if (!wifihal_sync_init(WIFIHAL_SYNC_MGR_CM)) {
-            // It reports the error
-            return false;
-        }
-        break;
-
-    case TARGET_INIT_MGR_BM:
-        if (!wifihal_init(loop, true)) {
-            // It reports the error
-            return false;
-        }
-        break;
-
-    default:
-        break;
+        default:
+            break;
     }
 
     return true;
@@ -173,18 +315,22 @@ bool target_init(target_init_opt_t opt, struct ev_loop *loop)
 
 bool target_close(target_init_opt_t opt, struct ev_loop *loop)
 {
+    if (osync_hal_deinit() != OSYNC_HAL_SUCCESS)
+    {
+        LOGW("OSync HAL deinit failed.");
+    }
+
     switch (opt)
     {
-    case TARGET_INIT_MGR_WM:
-        wifihal_config_cleanup();
-        /* fall through */
+        case TARGET_INIT_MGR_WM:
+            sync_cleanup();
+            /* fall through */
 
-    case TARGET_INIT_MGR_SM:
-        wifihal_cleanup();
-        break;
+        case TARGET_INIT_MGR_SM:
+            break;
 
-    default:
-        break;
+        default:
+            break;
     }
 
     target_map_close();
@@ -217,37 +363,122 @@ const char* target_speedtest_dir(void)
     return target_tools_dir();
 }
 
-bool target_master_state_register(const char *ifname, target_master_state_cb_t *mstate_cb)
-{
-    return false;
-}
-
-bool target_eth_master_state_get(const char *ifname, struct schema_Wifi_Master_State *mstate)
-{
-    return false;
-}
-
-bool target_vif_master_state_get(const char *ifname, struct schema_Wifi_Master_State *mstate)
-{
-    return true;
-}
-
-bool target_gre_master_state_get(const char *ifname, const char *remote_ip, struct schema_Wifi_Master_State *mstate)
-{
-    return false;
-}
-
-bool target_bridge_master_state_get(const char *ifname, struct schema_Wifi_Master_State *mstate)
-{
-    return false;
-}
-
-
 /******************************************************************************
  *  SERVICE definitions
  *****************************************************************************/
 
+static bool update_device_mode(devconf_cb_t devconf_cb)
+{
+    struct schema_AWLAN_Node awlan;
+    schema_filter_t filter;
+    const char *device_mode_value;
+
+    memset(&awlan, 0, sizeof(awlan));
+    schema_filter_init(&filter, "+");
+
+    osync_hal_devinfo_cloud_mode_t mode = OSYNC_HAL_DEVINFO_CLOUD_MODE_UNKNOWN;
+
+    if (osync_hal_devinfo_get_cloud_mode(&mode) != OSYNC_HAL_SUCCESS)
+    {
+        LOGE("Cannot get cloud mode");
+        return false;
+    }
+
+    if (mode == OSYNC_HAL_DEVINFO_CLOUD_MODE_UNKNOWN)
+    {
+        LOGW("Unknown cloud mode");
+        return false;
+    }
+
+    switch (mode)
+    {
+        case OSYNC_HAL_DEVINFO_CLOUD_MODE_FULL:
+            device_mode_value = SCHEMA_CONSTS_DEVICE_MODE_CLOUD;
+            break;
+        case OSYNC_HAL_DEVINFO_CLOUD_MODE_MONITOR:
+            device_mode_value = SCHEMA_CONSTS_DEVICE_MODE_MONITOR;
+            break;
+        default:
+            LOGW("Failed to set device mode! :: unknown value = %d", mode);
+            return false;
+    }
+
+    LOGN("### Setting device mode to '%s' mode ###", device_mode_value);
+    SCHEMA_FF_SET_STR(&filter, &awlan, device_mode, device_mode_value);
+    devconf_cb(&awlan, &filter);
+
+    return true;
+}
+
+static bool update_redirector_addr(devconf_cb_t devconf_cb)
+{
+    struct schema_AWLAN_Node awlan;
+    schema_filter_t filter;
+    char buf[64];
+
+    memset(buf, 0, sizeof(buf));
+    memset(&awlan, 0, sizeof(awlan));
+    schema_filter_init(&filter, "+");
+
+    if (osync_hal_devinfo_get_redirector_addr(buf, sizeof(buf)) != OSYNC_HAL_SUCCESS)
+    {
+        LOGW("### Failed to get redirector address, using default ###");
+        memset(buf, 0, sizeof(buf));
+        STRSCPY(buf, CONTROLLER_ADDR);
+    }
+
+    STRSCPY(awlan.redirector_addr, buf);
+    schema_filter_add(&filter, "redirector_addr");
+
+    devconf_cb(&awlan, &filter);
+
+    return true;
+}
+
 bool target_device_config_register(void *devconf_cb)
 {
-    return wifihal_device_config_register(devconf_cb);
+    if (!update_device_mode(devconf_cb))
+    {
+        return false;
+    }
+
+    return update_redirector_addr(devconf_cb);
 }
+
+void
+target_fatal_restart(bool block, char *reason)
+{
+    const char      *scripts_dir = target_scripts_dir();
+    char            cmd[256];
+    int             max_fd, fd;
+
+    LOGEM("===== Fatal Restart Triggered: %s =====", reason ? reason : "???");
+
+    // Build our restart path
+    snprintf(cmd, sizeof(cmd)-1, "%s/restart.sh", scripts_dir);
+
+    // Fork to run restart command
+    if (fork() != 0)
+    {
+        if (block)
+        {
+            while(1);
+        }
+        return;
+    }
+    setsid();
+
+    // Close sockets from 3 and above
+    max_fd = sysconf(_SC_OPEN_MAX);
+    for (fd = 3; fd < max_fd; fd++)
+    {
+        close(fd);
+    }
+
+    // Sleep a few seconds before restart
+    sleep(3);
+
+    execl(cmd, cmd, NULL);
+    exit(1);
+}
+

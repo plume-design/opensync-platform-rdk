@@ -40,21 +40,32 @@ UNIT_SRC_TOP += $(UNIT_SRC_DIR)/target.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/entity.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/managers.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/clients.c
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/dhcp.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/radio.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/vif.c
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/inet.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/stats.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/log.c
+UNIT_SRC_TOP += $(UNIT_SRC_DIR)/sync.c
+UNIT_SRC_TOP += $(UNIT_SRC_DIR)/maclearn.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/bsal.c
 
 UNIT_CFLAGS  += -I$(OVERRIDE_DIR)/inc
+UNIT_CFLAGS  += -DENABLE_MESH_SOCKETS
 
 UNIT_DEPS    := $(PLATFORM_DIR)/src/lib/devinfo
-UNIT_DEPS    += $(PLATFORM_DIR)/src/lib/wifihal
+UNIT_DEPS    += $(PLATFORM_DIR)/src/lib/osync_hal
+UNIT_DEPS    += src/lib/evsched
+UNIT_DEPS    += src/lib/schema
+UNIT_DEPS    += src/lib/const
+
+UNIT_DEPS_CFLAGS += src/lib/ovsdb # Needed for ovsdb_utils.h
+UNIT_DEPS_CFLAGS += src/lib/osn   # Needed for osn_dhcp.h
+
 ifeq ($(RDK_LOGGER),1)
 UNIT_DEPS    += $(PLATFORM_DIR)/src/lib/pl2rl
 endif
+
+UNIT_LDFLAGS := $(SDK_LIB_DIR)  -lhal_wifi -lrt
+UNIT_CFLAGS += -DCONTROLLER_ADDR="\"$(shell echo -n $(CONTROLLER_ADDR))\""
 
 UNIT_EXPORT_CFLAGS  := $(UNIT_CFLAGS)
 UNIT_EXPORT_LDFLAGS := $(UNIT_LDFLAGS)

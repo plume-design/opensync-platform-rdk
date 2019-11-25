@@ -24,59 +24,42 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <stdio.h>
-
-#include "os.h"
-#include "log.h"
-
+#include "os_nif.h"
+#include "osync_hal.h"
 #include "target.h"
 
 
-#define MODULE_ID LOG_MODULE_ID_OSA
-
-
-/******************************************************************************
- *  PUBLIC definitions
- *****************************************************************************/
-
-target_managers_config_t target_managers_config[] =
+#ifdef OSYNC_HAL_USE_DEFAULT_INIT
+osync_hal_return_t osync_hal_init()
 {
-    {
-        .name = TARGET_MANAGER_PATH("cm"),
-        .needs_plan_b = false,
-    },
+    return OSYNC_HAL_SUCCESS;
+}
+#endif /* OSYNC_HAL_USE_DEFAULT_INIT */
 
-    {
-        .name = TARGET_MANAGER_PATH("qm"),
-        .needs_plan_b = false,
-    },
 
+#ifdef OSYNC_HAL_USE_DEFAULT_READY
+osync_hal_return_t osync_hal_ready()
+{
+    if (!os_nif_is_interface_ready(BACKHAUL_IFNAME_2G))
     {
-        .name = TARGET_MANAGER_PATH("sm"),
-        .needs_plan_b = false,
-    },
+        LOGW("Target not ready, '%s' is not UP", BACKHAUL_IFNAME_2G);
+        return OSYNC_HAL_FAILURE;
+    }
 
+    if (!os_nif_is_interface_ready(BACKHAUL_IFNAME_5G))
     {
-        .name = TARGET_MANAGER_PATH("wm"),
-        .needs_plan_b = false,
-    },
+        LOGW("Target not ready, '%s' is not UP", BACKHAUL_IFNAME_5G);
+        return OSYNC_HAL_FAILURE;
+    }
 
-    {
-        .name = TARGET_MANAGER_PATH("nm"),
-        .needs_plan_b = false,
-    },
+    return OSYNC_HAL_SUCCESS;
+}
+#endif /* OSYNC_HAL_USE_DEFAULT_READY */
 
-    {
-        .name = TARGET_MANAGER_PATH("lm"),
-        .needs_plan_b = false,
-    },
 
-#if !defined(BUILD_DISABLE_BM)
-    {
-        .name = TARGET_MANAGER_PATH("bm"),
-        .needs_plan_b = false,
-    },
-#endif /* !defined(BUILD_DISABLE_BM) */
-};
-
-int target_managers_num = ARRAY_SIZE(target_managers_config);
+#ifdef OSYNC_HAL_USE_DEFAULT_DEINIT
+osync_hal_return_t osync_hal_deinit()
+{
+    return OSYNC_HAL_SUCCESS;
+}
+#endif /* OSYNC_HAL_USE_DEFAULT_DEINIT */

@@ -45,11 +45,6 @@ extern INT wifi_context_init(void);
 extern INT wifi_context_delete(void);
 #endif /* BCM_WIFI */
 
-#define WIFI_HAL_VER (WIFI_HAL_MAJOR_VERSION * 100 + WIFI_HAL_MINOR_VERSION * 10 + WIFI_HAL_MAINTENANCE_VERSION)
-#if WIFI_HAL_VER >= 250
-#define HAVE_wifi_getNeighboringWiFiStatus
-#endif
-
 #define AP_NAME_LEN 16
 
 #ifndef ARRAY_SIZE
@@ -73,7 +68,10 @@ bool print_compact = false;
     do {\
         if (print_compact) { \
             char tmp[256]; \
-            snprintf(tmp, sizeof(tmp), FMT, VALUE); \
+            if (snprintf(tmp, sizeof(tmp), FMT, VALUE) < 0) { \
+                printf("PRINT_FMT: sprintf failed\n"); \
+                exit(1); \
+            } \
             printf("%-4s ", tmp); \
         } else { \
             printf("  %-30s %s = ", NAME, TAG); \
@@ -165,40 +163,29 @@ void parse_mac(char *macstr, mac_address_t *macp)
     }
 }
 
-/*****************************************************************************/
-
-void test_getRadioTrafficStats2(int index)
+bool radio_to_apindex(int radioIndex, int *apIndex)
 {
-    wifi_radioTrafficStats2_t stats, *s = &stats;
-    INT ret = 0;
-
-    memset(&stats, 0, sizeof(stats));
-    printf("test_getRadioTrafficStats2(%d)\n", index);
-    ret = wifi_getRadioTrafficStats2(index, &stats); //Tr181
-    printf("return: %d\n", ret);
-    if (ret < 0) return;
-    PRINT_INT(s, radio_BytesSent);
-    PRINT_INT(s, radio_BytesReceived);
-    PRINT_INT(s, radio_PacketsSent);
-    PRINT_INT(s, radio_PacketsReceived);
-    PRINT_INT(s, radio_ErrorsSent);
-    PRINT_INT(s, radio_ErrorsReceived);
-    PRINT_INT(s, radio_DiscardPacketsSent);
-    PRINT_INT(s, radio_DiscardPacketsReceived);
-    PRINT_INT(s, radio_PLCPErrorCount);
-    PRINT_INT(s, radio_FCSErrorCount);
-    PRINT_INT(s, radio_InvalidMACCount);
-    PRINT_INT(s, radio_PacketsOtherReceived);
-    PRINT_INT(s, radio_NoiseFloor);
-    PRINT_INT(s, radio_ChannelUtilization);
-    PRINT_INT(s, radio_ActivityFactor);
-    PRINT_INT(s, radio_CarrierSenseThreshold_Exceeded);
-    PRINT_INT(s, radio_RetransmissionMetirc);
-    PRINT_INT(s, radio_MaximumNoiseFloorOnChannel);
-    PRINT_INT(s, radio_MinimumNoiseFloorOnChannel);
-    PRINT_INT(s, radio_MedianNoiseFloorOnChannel);
-    PRINT_INT(s, radio_StatisticsStartTime);
+    int num_ssid;
+    ULONG n;
+    INT r;
+    int i;
+    // find first apIndex of the radioIndex
+    *apIndex = -1;
+    wifi_getSSIDNumberOfEntries(&n);
+    num_ssid = n;
+    for (i = 0; i < num_ssid; i++) {
+        r = -1;
+        wifi_getSSIDRadioIndex(i, &r);
+        if (r == radioIndex) {
+            *apIndex = i;
+            return true;
+        }
+    }
+    printf("No apIndex found for radio %d\n", radioIndex);
+    return false;
 }
+
+/*****************************************************************************/
 
 void test_getSSIDTrafficStats2(int index)
 {
@@ -233,35 +220,27 @@ void test_getSSIDTrafficStats2(int index)
     PRINT_INT(s, ssid_UnknownPacketsReceived);
 }
 
-INT wait_neighbor_scan(bool use_new, INT apIndex,
+INT wait_neighbor_scan(INT radioIndex,
         wifi_neighbor_ap2_t **neighbor_ap_array, UINT *output_array_size)
 {
     INT rc;
     int timeout = 60;
     int t = 0;
-    char *ifName = _wifi_getApName(apIndex);
-    int radioIndex;
+    INT apIndex;
+    char *ifName;
+
+    if (!radio_to_apindex(radioIndex, &apIndex)) {
+        printf("Cannot get AP index for radioIndex %d\n", radioIndex);
+        return -1;
+    }
+
+    ifName = _wifi_getApName(apIndex);
 
     do {
         errno = 0;
-#ifdef HAVE_wifi_getNeighboringWiFiStatus
-        if (use_new) {
-            rc = wifi_getNeighboringWiFiStatus(apIndex, neighbor_ap_array, output_array_size);
-            printf("wifi_getNeighboringWiFiStatus(apIndex:%d, size:%d) = %d errno=%d\n",
-                    apIndex, *output_array_size, rc, errno);
-        }
-        else
-#endif
-        {
-            rc = wifi_getSSIDRadioIndex(apIndex, &radioIndex);
-            if (rc != RETURN_OK) {
-                printf("wifi_getSSIDRadioIndex(%d) = %d\n", apIndex, rc);
-                break;
-            }
-            rc = wifi_getNeighboringWiFiDiagnosticResult2(radioIndex, neighbor_ap_array, output_array_size);
-            printf("wifi_getNeighboringWiFiDiagnosticResult2(radioIndex:%d, size:%d) = %d errno=%d\n",
-                    radioIndex, *output_array_size, rc, errno);
-        }
+        rc = wifi_getNeighboringWiFiStatus(radioIndex, neighbor_ap_array, output_array_size);
+        printf("wifi_getNeighboringWiFiStatus(apIndex:%d, size:%d) = %d errno=%d\n",
+                apIndex, *output_array_size, rc, errno);
         if (rc != RETURN_OK && errno == EAGAIN) {
             LOG(INFO, "%d/%d Scan in progress... %s %d %s", t, timeout, ifName, errno, strerror(errno));
             sleep(1);
@@ -346,7 +325,7 @@ void test_startNeighborScan(int apIndex, int argc, char *argv[])
     run_startNeighborScan(apIndex, scan_mode, dwell, num_ch, ch_list);
 }
 
-void get_neighbor_results(bool use_new, int apIndex)
+void get_neighbor_results(int radioIndex)
 {
     wifi_neighbor_ap2_t *neighbor_ap_array=NULL, *p=NULL;
     UINT array_size = 0;
@@ -355,7 +334,7 @@ void get_neighbor_results(bool use_new, int apIndex)
     struct timeval tv1, tv2;
 
     gettimeofday(&tv1, NULL);
-    ret = wait_neighbor_scan(use_new, apIndex, &neighbor_ap_array, &array_size);
+    ret = wait_neighbor_scan(radioIndex, &neighbor_ap_array, &array_size);
     gettimeofday(&tv2, NULL);
     printf("(run time: %d) return: %d array_size=%d\n", (int)tv_delta_ms(tv1, tv2), ret, array_size);
     if (ret < 0) return;
@@ -392,54 +371,33 @@ void get_neighbor_results(bool use_new, int apIndex)
     if (neighbor_ap_array) free(neighbor_ap_array);
 }
 
-bool radio_to_apindex(int radioIndex, int *apIndex)
+void test_getNeighboringWiFiStatus(int radioIndex)
 {
-    int num_ssid;
-    ULONG n;
-    INT r;
-    int i;
-    // find first apIndex of the radioIndex
-    *apIndex = -1;
-    wifi_getSSIDNumberOfEntries(&n);
-    num_ssid = n;
-    for (i = 0; i < num_ssid; i++) {
-        r = -1;
-        wifi_getSSIDRadioIndex(i, &r);
-        if (r == radioIndex) {
-            *apIndex = i;
-            return true;
-        }
-    }
-    printf("No apIndex found for radio %d\n", radioIndex);
-    return false;
+    get_neighbor_results(radioIndex);
 }
 
-void test_getNeighboringWiFiDiagnosticResult2(int radioIndex)
-{
-    int apIndex;
-    if (!radio_to_apindex(radioIndex, &apIndex)) exit(1);
-    get_neighbor_results(false, apIndex);
-}
-
-void test_getNeighboringWiFiStatus(int apIndex)
-{
-    get_neighbor_results(true, apIndex);
-}
-
-void test_neighbors(bool use_new, int apIndex, int num_ch, char **ch_array)
+void test_neighbors(int radioIndex, int num_ch, char **ch_array)
 {
     int i;
+    INT apIndex;
+
     if (num_ch < 0) num_ch = 0;
     UINT ch_list[num_ch];
     for (i=0; i<num_ch; i++) {
         ch_list[i] = atoi(ch_array[i]);
     }
+
+    if (!radio_to_apindex(radioIndex, &apIndex)) {
+        printf("Cannot get AP index for radioIndex %d\n", radioIndex);
+        return;
+    }
+
     run_startNeighborScan(apIndex, opt_scan_mode, opt_dwell, num_ch, (num_ch > 0) ? ch_list : NULL);
     if (opt_wait) {
         printf("sleep %d ms\n", opt_wait);
         usleep(opt_wait * 1000);
     }
-    get_neighbor_results(use_new, apIndex);
+    get_neighbor_results(radioIndex);
 }
 
 
@@ -464,7 +422,7 @@ void test_getRadioChannelStats(int index)
         }
         ch_stats[n].ch_in_pool = true;
     }
-    printf("wifi_getRadioChannelStats(%d size=%d)\n", index, ARRAY_SIZE(ch_stats));
+    printf("wifi_getRadioChannelStats(%d size=%d)\n", index, (int)ARRAY_SIZE(ch_stats));
     ret = wifi_getRadioChannelStats(index, ch_stats, ARRAY_SIZE(ch_stats));
     printf("return: %d\n", ret);
     if (ret < 0) return;
@@ -480,11 +438,11 @@ void test_getRadioChannelStats(int index)
             continue;
         }
         printf("  ch %3u tx %10"PRIu64" rx %10"PRIu64" busy %10"PRIu64" total %10"PRIu64"\n",
-                s->ch_number,
-                s->ch_utilization_busy_tx,
-                s->ch_utilization_busy_rx,
-                s->ch_utilization_busy,
-                s->ch_utilization_total);
+                (unsigned int)s->ch_number,
+                (uint64_t)s->ch_utilization_busy_tx,
+                (uint64_t)s->ch_utilization_busy_rx,
+                (uint64_t)s->ch_utilization_busy,
+                (uint64_t)s->ch_utilization_total);
         n++;
     }
     printf("  channels with stats: %d\n", n);
@@ -584,32 +542,6 @@ void test_getApAssociatedDeviceTxStatsResult(int index, char *mac_str)
     }
     print_compact = false;
     free(stats_array);
-}
-
-void test_getApAssociatedDeviceTidStatsResult(int index, char *mac_str)
-{
-    mac_address_t mac;
-    wifi_associated_dev_tid_stats_t tid_stats;
-    wifi_associated_dev_tid_entry_t *s;
-    ULLONG handle;
-    int i;
-    INT ret = 0;
-
-    parse_mac(mac_str, &mac);
-    printf("wifi_getApAssociatedDeviceTidStatsResult(%d %s)\n", index, mac_str);
-    ret = wifi_getApAssociatedDeviceTidStatsResult(index, &mac, &tid_stats, &handle);
-    printf("return: %d\n", ret);
-    PRINT_HEX1(handle);
-    if (ret < 0) return;
-    printf("  [i  ac  tid] ewma_time_ms sum_time_ms num_msdus\n");
-    for (i=0; i<(int)ARRAY_SIZE(tid_stats.tid_array); i++) {
-        s = &tid_stats.tid_array[i];
-        printf("   %-2d %-3d %-3d  %-12"PRIu64" %-11"PRIu64" %"PRIu64"\n",
-                i, s->ac, s->tid,
-                s->ewma_time_ms,
-                s->sum_time_ms,
-                s->num_msdus);
-    }
 }
 
 void test_getApAssociatedDeviceStats(int index, char *mac_str)
@@ -740,7 +672,6 @@ void all_radios()
 
     for (i=0; i < (int)nr; i++) {
         print_radio_banner(i, NULL, NULL);
-        test_getRadioTrafficStats2(i);
         printf("\n");
         test_getRadioChannelStats(i);
         printf("\n");
@@ -752,16 +683,14 @@ void print_ap_banner(int i)
     int r;
     char ssid[64];
     BOOL enabled;
-    char status[64];
     wifi_getApRadioIndex(i, &r);
     *ssid=0;
     wifi_getSSIDName(i, ssid);
-    wifi_getApEnable(i, &enabled);
-    wifi_getApStatus(i, status);
-    printf("--- RADIO: %d %-8s AP: %-2d IFNAME: %-8s STATUS: %d %-7s SSID: '%s'\n",
+    wifi_getSSIDEnable(i, &enabled);
+    printf("--- RADIO: %d %-8s AP: %-2d IFNAME: %-8s STATUS: %d SSID: '%s'\n",
             r, _wifi_getRadioName(r),
             i, _wifi_getApName(i),
-            enabled, status, ssid);
+            enabled, ssid);
 }
 
 void all_aps()
@@ -780,10 +709,9 @@ void all_aps()
     }
 }
 
-void all_neighbors(bool use_new)
+void all_neighbors()
 {
     int i;
-    int apIndex;
     ULONG nr;
     char band[64];
     ULONG channel;
@@ -794,7 +722,6 @@ void all_neighbors(bool use_new)
 
     for (i=0; i < (int)nr; i++) {
         print_radio_banner(i, band, &channel);
-        if (!radio_to_apindex(i, &apIndex)) continue;
         int n_ch;
         char **ch_list;
         char ch_current[32];
@@ -814,7 +741,7 @@ void all_neighbors(bool use_new)
                 n_ch = 3;
             }
         }
-        test_neighbors(use_new, apIndex, n_ch, ch_list);
+        test_neighbors(i, n_ch, ch_list);
         printf("\n");
     }
 }
@@ -835,7 +762,6 @@ void print_client_details(int i, int apIndex, char *mac_str)
     test_getApAssociatedDeviceStats(apIndex, mac_str);
     test_getApAssociatedDeviceRxStatsResult(statsIndex, mac_str);
     test_getApAssociatedDeviceTxStatsResult(statsIndex, mac_str);
-    test_getApAssociatedDeviceTidStatsResult(statsIndex, mac_str);
     printf("\n");
 }
 
@@ -863,31 +789,37 @@ void all()
     all_clients();
 }
 
-INT new_client_callback(INT apIndex, wifi_associated_dev_t *associated_dev)
+INT new_ap_associated_client_callback(INT apIndex, wifi_associated_dev_t *associated_dev)
 {
-    printf("NEW CLIENT: apIndex=%d\n", apIndex);
+    printf("NEW AP ASSOCIATED CLIENT: apIndex=%d\n", apIndex);
     print_wifi_associated_dev(associated_dev);
+    printf("\n");
+    return RETURN_OK;
+}
+
+INT ap_disassociated_client_callback(INT apIndex, char *MAC, INT event_type)
+{
+    printf("AP DISASSOCIATED  CLIENT: apIndex=%d\n", apIndex);
+    printf("  MAC:        %s\n", MAC);
+    printf("  event_type: %d\n", event_type);
     printf("\n");
     return RETURN_OK;
 }
 
 void test_newApAssociatedDevice_callback()
 {
-    printf("NOT SUPPORTED\n");
+    printf("wifi_newApAssociatedDevice_callback_register()\n");
+    wifi_newApAssociatedDevice_callback_register(new_ap_associated_client_callback);
+    printf("Waiting for new clients. (stop with CTRL+C)\n");
+    pause();
 }
 
-void test_pushRadioChannel(int radioIndex, char *channel_str)
+void test_apDisassociatedDevice_callback()
 {
-    UINT channel = atoi(channel_str);
-    INT ret;
-    struct timeval tv1, tv2;
-
-    printf("wifi_pushRadioChannel(radioIndex:%d channel:%d)\n", radioIndex, channel);
-    gettimeofday(&tv1, NULL);
-    ret = wifi_pushRadioChannel(radioIndex, channel);
-    gettimeofday(&tv2, NULL);
-    printf("return: %d\n", ret);
-    printf("time: %d ms\n", (int)tv_delta_ms(tv1, tv2));
+    printf("wifi_apDisassociatedDevice_callback_register()\n");
+    wifi_apDisassociatedDevice_callback_register(ap_disassociated_client_callback);
+    printf("Waiting for disconnecting clients. (stop with CTRL+C)\n");
+    pause();
 }
 
 void test_pushRadioChannel2(int radioIndex, char *channel_str, char *width_str, char *count_str)
@@ -907,9 +839,106 @@ void test_pushRadioChannel2(int radioIndex, char *channel_str, char *width_str, 
     printf("time: %d ms\n", (int)tv_delta_ms(tv1, tv2));
 }
 
+void test_getRadioDfsSupport(int radioIndex)
+{
+    int ret;
+    BOOL output_bool;
+
+    ret = wifi_getRadioDfsSupport(radioIndex, &output_bool);
+    if (ret != RETURN_OK) {
+        printf("%s failed\n", __func__);
+        return;
+    }
+
+    printf("DFS SUPPORTED FOR RADIO %d: %s\n", radioIndex,
+            output_bool ? "YES" : "NO");
+}
+
+void test_getRadioDfsEnable(int radioIndex)
+{
+    int ret;
+    BOOL output_bool;
+
+    printf("WARNING: NOT SUPPORTED AS A STANDALONE CALL\n");
+
+    ret = wifi_getRadioDfsEnable(radioIndex, &output_bool);
+    if (ret != RETURN_OK) {
+        printf("%s failed\n", __func__);
+        return;
+    }
+
+    printf("DFS %s\n", output_bool ? "ENABLED" : "DISABLED");
+}
+
+void test_setRadioDfsEnable(int radioIndex, char *enabled_str)
+{
+    int ret;
+    int enabled = atoi(enabled_str);
+
+    ret = wifi_setRadioDfsEnable(radioIndex, enabled ? true : false);
+    if (ret != RETURN_OK) {
+        printf("%s failed\n", __func__);
+        return;
+    }
+
+    printf("DFS SUPPORT FOR RADIO %d SET TO: %s\n", radioIndex,
+            enabled ? "TRUE" : "FALSE");
+}
+
+void test_getRadioChannels(int radioIndex)
+{
+    int ret;
+    int i;
+    const int MAP_SIZE=19;
+    wifi_channelMap_t channel_map[MAP_SIZE];
+
+    memset(channel_map, 0, sizeof(channel_map));
+
+    ret = wifi_getRadioChannels(radioIndex, channel_map, MAP_SIZE);
+    if (ret != RETURN_OK) {
+        printf("%s failed\n", __func__);
+        return;
+    }
+
+    for (i = 0; i < MAP_SIZE; i++) {
+        if (channel_map[i].ch_number == 0) {
+            continue; // If channel number is not set it means we don't have data for it.
+        }
+        printf("channel = %d state = %d\n", channel_map[i].ch_number,
+                channel_map[i].ch_state);
+    }
+}
+
+static void chan_event_cb(UINT radioIndex, wifi_chan_eventType_t event, UCHAR channel)
+{
+    printf("Received event, radioIndex = %d ", radioIndex);
+    switch (event) {
+        case WIFI_EVENT_CHANNELS_CHANGED:
+            printf("CHANNELS CHANGED, last_channel = %d\n", channel);
+            return;
+        case WIFI_EVENT_DFS_RADAR_DETECTED:
+            printf("DFS RADAR DETECTED, last_chanel = %d\n", channel);
+            return;
+        default:
+            printf("Unknown\n");
+            return;
+    }
+}
+
+void test_chan_eventRegister(int radioIndex)
+{
+    if (wifi_chan_eventRegister(chan_event_cb) != RETURN_OK) {
+        printf("Failed to register chan event callback\n");
+        return;
+    }
+
+    printf("Waiting for DFS events. (stop with CTRL+C)\n");
+    pause();
+}
+
 void test_size()
 {
-#define PRINT_SIZE(T) printf("sizeof(%s) = %d\n", #T, sizeof(T))
+#define PRINT_SIZE(T) printf("sizeof(%s) = %d\n", #T, (int)sizeof(T))
     PRINT_SIZE(unsigned char);
     PRINT_SIZE(unsigned int);
     PRINT_SIZE(unsigned long);
@@ -947,32 +976,28 @@ void help()
     printf("    all_neighbors\n");
     printf("    all_neighbors2\n");
     printf("    all_clients\n");
-    printf("    getRadioTrafficStats2                  <RADIO INDEX>\n");
     printf("    getRadioChannelStats                   <RADIO INDEX>\n");
     printf("    getSSIDTrafficStats2                   <AP INDEX>\n");
     // neighbors
-    printf("    neighbors                              <AP INDEX> [CHAN LIST]\n");
-    printf("       == startNeighborScan + getNeighboringWiFiDiagnosticResult2\n");
-#ifdef HAVE_wifi_getNeighboringWiFiStatus
-    printf("    neighbors2                             <AP INDEX> [CHAN LIST]\n");
+    printf("    neighbors2                             <RADIO INDEX> [CHAN LIST]\n");
     printf("       == startNeighborScan + getNeighboringWiFiStatus\n");
-#endif
     printf("    startNeighborScan                      <AP INDEX> <SCAN_MODE> <DWELL> [CHAN LIST]\n");
     printf("                                           SCAN_MODE: full, on, off\n");
-    printf("    getNeighboringWiFiDiagnosticResult2    <RADIO INDEX>\n");
-#ifdef HAVE_wifi_getNeighboringWiFiStatus
-    printf("    getNeighboringWiFiStatus               <AP INDEX>\n");
-#endif
+    printf("    getNeighboringWiFiStatus               <RADIO INDEX>\n");
     // clients
     printf("    client                                 <AP INDEX> <MAC>\n");
     printf("    getApAssociatedDeviceDiagnosticResult2 <AP INDEX>\n");
     printf("    getApAssociatedDeviceStats             <AP INDEX> <MAC>\n");
     printf("    getApAssociatedDeviceRxStatsResult     <RADIO INDEX> <MAC>\n");
     printf("    getApAssociatedDeviceTxStatsResult     <RADIO INDEX> <MAC>\n");
-    printf("    getApAssociatedDeviceTidStatsResult    <RADIO INDEX> <MAC>\n");
     printf("    newApAssociatedDevice_callback\n");
-    printf("    pushRadioChannel                       <RADIO INDEX> <CHANNEL>\n");
+    printf("    apDisassociatedDevice_callback\n");
     printf("    pushRadioChannel2                      <RADIO INDEX> <CHANNEL> <WIDTH> <CSA_BEACON_COUNT>\n");
+    printf("    getRadioDfsSupport                     <RADIO INDEX>\n");
+    printf("    getRadioDfsEnable                      <RADIO INDEX>\n");
+    printf("    setRadioDfsEnable                      <RADIO INDEX> <0 | 1>\n");
+    printf("    getRadioChannels                       <RADIO INDEX>\n");
+    printf("    chan_eventRegister                     <RADIO INDEX>\n");
 
     printf("radio indexes:\n");
     wifi_getRadioNumberOfEntries(&nr);
@@ -1084,6 +1109,10 @@ int main(int argc,char **argv)
         test_newApAssociatedDevice_callback();
         return 0;
     }
+    else if(!strcmp(cmd, "apDisassociatedDevice_callback")) {
+        test_apDisassociatedDevice_callback();
+        return 0;
+    }
     if (optind + 2 > argc) {
         help();
     }
@@ -1100,29 +1129,20 @@ int main(int argc,char **argv)
         cmd += 5;
     }
 
-    if (!strcmp(cmd, "getRadioTrafficStats2")) {
-        test_getRadioTrafficStats2(index);
-    }
-    else if (!strcmp(cmd, "getRadioChannelStats")) {
+    if (!strcmp(cmd, "getRadioChannelStats")) {
         test_getRadioChannelStats(index);
     }
     else if (!strcmp(cmd, "getSSIDTrafficStats2")) {
         test_getSSIDTrafficStats2(index);
     }
-    else if (!strcmp(cmd, "neighbors")) {
-        test_neighbors(false, index, xargc, xargv);
-    }
     else if (!strcmp(cmd, "neighbors2")) {
-        test_neighbors(true, index, xargc, xargv);
+        test_neighbors(index, xargc, xargv);
     }
     else if (!strcmp(cmd, "startNeighborScan")) {
         test_startNeighborScan(index, xargc, xargv);
     }
     else if (!strcmp(cmd, "getNeighboringWiFiStatus")) {
         test_getNeighboringWiFiStatus(index);
-    }
-    else if (!strcmp(cmd, "getNeighboringWiFiDiagnosticResult2")) {
-        test_getNeighboringWiFiDiagnosticResult2(index);
     }
     else if (!strcmp(cmd, "getApAssociatedDeviceDiagnosticResult2")) {
         test_getApAssociatedDeviceDiagnosticResult2(index, NULL, NULL);
@@ -1143,17 +1163,25 @@ int main(int argc,char **argv)
         if (!arg2) help();
         test_getApAssociatedDeviceTxStatsResult(index, arg2);
     }
-    else if (!strcmp(cmd, "getApAssociatedDeviceTidStatsResult")) {
-        if (!arg2) help();
-        test_getApAssociatedDeviceTidStatsResult(index, arg2);
-    }
-    else if (!strcmp(cmd, "pushRadioChannel")) {
-        if (!arg2) help();
-        test_pushRadioChannel(index, arg2);
-    }
     else if (!strcmp(cmd, "pushRadioChannel2")) {
         if (xargc < 2) help();
         test_pushRadioChannel2(index, arg2, xargv[1], xargv[2]);
+    }
+    else if (!strcmp(cmd, "getRadioDfsSupport")) {
+        test_getRadioDfsSupport(index);
+    }
+    else if (!strcmp(cmd, "getRadioDfsEnable")) {
+        test_getRadioDfsEnable(index);
+    }
+    else if (!strcmp(cmd, "setRadioDfsEnable")) {
+        if (!arg2) help();
+        test_setRadioDfsEnable(index, arg2);
+    }
+    else if (!strcmp(cmd, "getRadioChannels")) {
+        test_getRadioChannels(index);
+    }
+    else if (!strcmp(cmd, "chan_eventRegister")) {
+        test_chan_eventRegister(index);
     }
     else {
         help();

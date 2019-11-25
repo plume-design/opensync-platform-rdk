@@ -24,59 +24,26 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <stdio.h>
+#include <stdlib.h>
 
-#include "os.h"
-#include "log.h"
+#include "osn_inet.h"
 
-#include "target.h"
+static int dummy_route_data;
 
-
-#define MODULE_ID LOG_MODULE_ID_OSA
-
-
-/******************************************************************************
- *  PUBLIC definitions
- *****************************************************************************/
-
-target_managers_config_t target_managers_config[] =
+bool osn_route_status_notify(
+        osn_route_t *self,
+        osn_route_status_fn_t *func,
+        void *data)
 {
-    {
-        .name = TARGET_MANAGER_PATH("cm"),
-        .needs_plan_b = false,
-    },
+    return true;
+}
 
-    {
-        .name = TARGET_MANAGER_PATH("qm"),
-        .needs_plan_b = false,
-    },
+osn_route_t* osn_route_new(const char *ifname)
+{
+    return (osn_route_t *)&dummy_route_data;
+}
 
-    {
-        .name = TARGET_MANAGER_PATH("sm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("wm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("nm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("lm"),
-        .needs_plan_b = false,
-    },
-
-#if !defined(BUILD_DISABLE_BM)
-    {
-        .name = TARGET_MANAGER_PATH("bm"),
-        .needs_plan_b = false,
-    },
-#endif /* !defined(BUILD_DISABLE_BM) */
-};
-
-int target_managers_num = ARRAY_SIZE(target_managers_config);
+bool osn_route_del(osn_route_t *self)
+{
+    return true;
+}

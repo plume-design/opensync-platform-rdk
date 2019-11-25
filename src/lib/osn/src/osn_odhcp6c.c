@@ -24,59 +24,66 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
-#include "os.h"
+#include "util.h"
+
+#include "osn_dhcpv6.h"
+#include "const.h"
 #include "log.h"
 
-#include "target.h"
-
-
-#define MODULE_ID LOG_MODULE_ID_OSA
-
-
-/******************************************************************************
- *  PUBLIC definitions
- *****************************************************************************/
-
-target_managers_config_t target_managers_config[] =
+struct osn_dhcpv6_client
 {
-    {
-        .name = TARGET_MANAGER_PATH("cm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("qm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("sm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("wm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("nm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("lm"),
-        .needs_plan_b = false,
-    },
-
-#if !defined(BUILD_DISABLE_BM)
-    {
-        .name = TARGET_MANAGER_PATH("bm"),
-        .needs_plan_b = false,
-    },
-#endif /* !defined(BUILD_DISABLE_BM) */
+    int foo;
 };
 
-int target_managers_num = ARRAY_SIZE(target_managers_config);
+static osn_dhcpv6_client_t dummy_dhcpv6_client;
+
+osn_dhcpv6_client_t* osn_dhcpv6_client_new(const char *ifname)
+{
+    return &dummy_dhcpv6_client;
+}
+
+bool osn_dhcpv6_client_del(osn_dhcpv6_client_t *self)
+{
+    return true;
+}
+
+bool osn_dhcpv6_client_apply(osn_dhcpv6_client_t *self)
+{
+    return true;
+}
+
+bool osn_dhcpv6_client_set(
+        osn_dhcpv6_client_t *self,
+        bool request_address,
+        bool request_prefixes,
+        bool rapid_commit,
+        bool renew)
+{
+    return true;
+}
+
+bool osn_dhcpv6_client_option_request(
+        osn_dhcpv6_client_t *self,
+        int tag)
+{
+    return true;
+}
+
+bool osn_dhcpv6_client_option_send(
+        osn_dhcpv6_client_t *self,
+        int tag,
+        const char *value)
+{
+    return true;
+}
+
+void osn_dhcpv6_client_status_notify(
+        osn_dhcpv6_client_t *self,
+        osn_dhcpv6_client_status_fn_t *fn,
+        void *data)
+{
+    return;
+}

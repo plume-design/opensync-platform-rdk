@@ -52,20 +52,17 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 /*****************************************************************************/
 
-const char *
-target_log_trigger_dir(void)
+const char* target_log_trigger_dir(void)
 {
     return LOG_TRIGGER_DIR;
 }
 
-const char *
-target_log_state_file(void)
+const char* target_log_state_file(void)
 {
     return LOG_STATE_FILE;
 }
 
-bool
-target_log_pull(const char *upload_url, const char *upload_token)
+bool target_log_pull(const char *upload_url, const char *upload_token)
 {
     char        tmp[1024];
 
@@ -79,8 +76,7 @@ target_log_pull(const char *upload_url, const char *upload_token)
     return !cmd_log(tmp);
 }
 
-btrace_type
-target_get_btrace_type(void)
+btrace_type target_get_btrace_type(void)
 {
     return BTRACE_LOG_ONLY;
 }
@@ -92,8 +88,7 @@ target_get_btrace_type(void)
 static logger_fn_t          logger_rdk_log;
 static logger_t             logger_rdk;
 
-static bool
-logger_rdk_new(logger_t *self)
+static bool logger_rdk_new(logger_t *self)
 {
     memset(self, 0, sizeof(*self));
     self->logger_fn = logger_rdk_log;
@@ -103,8 +98,7 @@ logger_rdk_new(logger_t *self)
     return true;
 }
 
-static void
-logger_rdk_log(logger_t *self, logger_msg_t *msg)
+static void logger_rdk_log(logger_t *self, logger_msg_t *msg)
 {
     // Attempt to send message
     pl2rl_log(msg);
@@ -112,10 +106,9 @@ logger_rdk_log(logger_t *self, logger_msg_t *msg)
     return;
 }
 
-bool
-target_log_open(char *name, int flags)
+bool target_log_open(char *name, int flags)
 {
-    if (log_open(name, flags))
+    if (log_open(name, flags) == true)
     {
         logger_rdk_new(&logger_rdk);
         log_register_logger(&logger_rdk);

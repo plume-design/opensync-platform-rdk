@@ -28,22 +28,343 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "os.h"
 #include "log.h"
+#include "ds_tree.h"
 
 #include "target.h"
-#include "wifihal.h"
-
+#include "target_internal.h"
 
 #define MODULE_ID LOG_MODULE_ID_OSA
 
+#define HAL_CB_QUEUE_MAX    20
 
-/******************************************************************************
- *  PUBLIC definitions
- *****************************************************************************/
-
-bool
-target_clients_register(char *ifname, target_clients_cb_t *clients_update_cb)
+typedef struct
 {
-    (void)ifname;
+    char                mac[WIFIHAL_MAX_MACSTR];
+    char                key_id[WIFIHAL_MAX_BUFFER];
 
-    return wifihal_clients_init(clients_update_cb);
+    INT                 apIndex;
+
+    ds_tree_node_t      dst_node;
+} client_t;
+
+static ds_tree_t            connected_clients;
+
+typedef struct
+{
+    INT                     ssid_index;
+    wifi_associated_dev_t   sta;
+
+    ds_dlist_node_t         node;
+} hal_cb_entry_t;
+
+static struct ev_loop      *hal_cb_loop = NULL;
+static pthread_mutex_t      hal_cb_lock;
+static ev_async             hal_cb_async;
+static ds_dlist_t           hal_cb_queue;
+static int                  hal_cb_queue_len = 0;
+
+static struct target_radio_ops g_rops;
+
+// Don't know why this prototype is missing...
+extern INT wifi_getAssociatedDeviceDetail(INT apIndex, INT devIndex, wifi_device_t *output_struct);
+
+static INT clients_hal_assocdev_cb(INT ssid_index, wifi_associated_dev_t *sta)
+{
+    hal_cb_entry_t      *cbe;
+    INT                 ret = RETURN_ERR;
+
+    pthread_mutex_lock(&hal_cb_lock);
+
+    if (hal_cb_queue_len == HAL_CB_QUEUE_MAX)
+    {
+        LOGW("clients_hal_assocdev_cb: Queue is full! Ignoring event...");
+        goto exit;
+    }
+
+    if ((cbe = calloc(1, sizeof(*cbe))) == NULL)
+    {
+        LOGE("clients_hal_assocdev_cb: Failed to allocate memory!");
+        goto exit;
+    }
+    cbe->ssid_index = ssid_index;
+    memcpy(&cbe->sta, sta, sizeof(cbe->sta));
+
+    ds_dlist_insert_tail(&hal_cb_queue, cbe);
+    hal_cb_queue_len++;
+    ret = RETURN_OK;
+
+exit:
+    pthread_mutex_unlock(&hal_cb_lock);
+    if (ret == RETURN_OK && hal_cb_loop)
+    {
+        if (!ev_async_pending(&hal_cb_async))
+        {
+            ev_async_send(hal_cb_loop, &hal_cb_async);
+        }
+    }
+    return ret;
 }
+
+static INT clients_hal_dissocdev_cb(INT ssid_index, char *mac, INT event_type)
+{
+    wifi_associated_dev_t sta;
+
+    memset(&sta, 0, sizeof(sta));
+
+    sscanf(mac, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+           &sta.cli_MACAddress[0], &sta.cli_MACAddress[1], &sta.cli_MACAddress[2],
+           &sta.cli_MACAddress[3], &sta.cli_MACAddress[4], &sta.cli_MACAddress[5]);
+    sta.cli_Active = false;
+
+    return clients_hal_assocdev_cb(ssid_index, &sta);
+}
+
+static void clients_hal_async_cb(EV_P_ ev_async *w, int revents)
+{
+    ds_dlist_iter_t     qiter;
+    hal_cb_entry_t      *cbe;
+    os_macaddr_t        macaddr;
+    char                mac[20];
+
+    pthread_mutex_lock(&hal_cb_lock);
+
+    cbe = ds_dlist_ifirst(&qiter, &hal_cb_queue);
+    while (cbe)
+    {
+        ds_dlist_iremove(&qiter);
+        hal_cb_queue_len--;
+
+        memcpy(&macaddr, cbe->sta.cli_MACAddress, sizeof(macaddr));
+        snprintf(mac, sizeof(mac), PRI(os_macaddr_lower_t), FMT(os_macaddr_t, macaddr));
+
+        if (cbe->sta.cli_Active)
+        {
+            clients_connection(cbe->ssid_index, mac, NULL);
+        }
+        else
+        {
+            clients_disconnection(cbe->ssid_index, mac);
+        }
+
+        free(cbe);
+        cbe = ds_dlist_inext(&qiter);
+    }
+
+    pthread_mutex_unlock(&hal_cb_lock);
+    return;
+}
+
+bool clients_hal_fetch_existing(unsigned int apIndex)
+{
+    wifi_associated_dev3_t  *associated_dev = NULL;
+    os_macaddr_t             macaddr;
+    UINT                     num_devices = 0;
+    ULONG                    i;
+    char                     mac[20];
+    INT                      ret;
+    char                     ifname[256];
+
+
+    memset(ifname, 0, sizeof(ifname));
+    ret = wifi_getApName(apIndex, ifname);
+    if (ret != RETURN_OK)
+    {
+        LOGE("Cannot get Ap Name for index %d", apIndex);
+        return false;
+    }
+
+    ret = wifi_getApAssociatedDeviceDiagnosticResult3(apIndex, &associated_dev, &num_devices);
+
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: Failed to fetch associated devices", ifname);
+        return false;
+    }
+    LOGD("%s: Found %u existing associated clients", ifname, num_devices);
+
+    for (i = 0; i < num_devices; ++i)
+    {
+        memcpy(&macaddr, associated_dev[i].cli_MACAddress, sizeof(macaddr));
+        snprintf(mac, sizeof(mac), PRI(os_macaddr_lower_t), FMT(os_macaddr_t, macaddr));
+
+        // Report connection
+        clients_connection(apIndex, mac, NULL);
+    }
+    free(associated_dev);
+
+    return true;
+}
+
+bool clients_hal_init(const struct target_radio_ops *rops)
+{
+    g_rops = *rops;
+
+    // See if we've been called already
+    if (hal_cb_loop != NULL)
+    {
+        // Already was initialized, just [re]start async watcher
+        ev_async_start(hal_cb_loop, &hal_cb_async);
+        return true;
+    }
+
+    ds_tree_init(&connected_clients,
+            (ds_key_cmp_t *)strcmp,
+            client_t,
+            dst_node);
+
+    // Save running evloop
+    if (wifihal_evloop == NULL) {
+        LOGE("clients_hal_init: Called before wifihal_evloop is initialized!");
+        return false;
+    }
+    hal_cb_loop = wifihal_evloop;
+
+    // Init CB Queue
+    ds_dlist_init(&hal_cb_queue, hal_cb_entry_t, node);
+    hal_cb_queue_len = 0;
+
+    // Init mutex lock for queue
+    pthread_mutex_init(&hal_cb_lock, NULL);
+
+    // Init async watcher
+    ev_async_init(&hal_cb_async, clients_hal_async_cb);
+    ev_async_start(hal_cb_loop, &hal_cb_async);
+
+    // Register callbacks (NOTE: calls callback from created pthread)
+    wifi_newApAssociatedDevice_callback_register(clients_hal_assocdev_cb);
+
+    wifi_apDisassociatedDevice_callback_register(clients_hal_dissocdev_cb);
+
+    return true;
+}
+
+static bool clients_update(
+        char *ifname,
+        const char *mac,
+        const char *key_id,
+        bool connected)
+{
+    struct schema_Wifi_Associated_Clients       cschema;
+
+    memset(&cschema, 0, sizeof(cschema));
+    cschema._partial_update = true;
+
+    STRSCPY(cschema.mac, mac);
+    if (key_id != NULL)
+    {
+        STRSCPY(cschema.key_id, key_id);
+    }
+
+    cschema.key_id_exists = key_id ? (strlen(key_id) > 0) : false;
+    if (connected == true)
+    {
+        STRSCPY(cschema.state, "active");
+    } else
+    {
+        STRSCPY(cschema.state, "inactive");
+    }
+
+    g_rops.op_client(&cschema, target_unmap_ifname(ifname), connected);
+
+    return true;
+}
+
+
+/*****************************************************************************/
+
+void clients_connection(
+        INT apIndex,
+        char *mac,
+        char *key_id)
+{
+    client_t *client;
+    char     ifname[256];
+    char     ifname_old[256];
+
+    memset(ifname, 0, sizeof(ifname));
+    memset(ifname_old, 0, sizeof(ifname_old));
+    if (mac == NULL) {
+        return;
+    }
+
+    if (wifi_getApName(apIndex, ifname) != RETURN_OK)
+    {
+        LOGE("Cannot get apName for index %d\n", apIndex);
+        return;
+    }
+
+    client = ds_tree_find(&connected_clients, mac);
+    if (client == NULL)
+    {
+        LOGI("%s: New client '%s' connected", ifname, mac);
+
+        if (!(client = calloc(1, sizeof(*client)))) {
+            LOGE("%s: Failed to allocate memory for new client", ifname);
+            return;
+        }
+
+        STRSCPY(client->mac, mac);
+        client->apIndex = apIndex;
+        ds_tree_insert(&connected_clients, client, client->mac);
+    }
+    else if (client->apIndex != apIndex)
+    {
+        if (wifi_getApName(client->apIndex, ifname_old) != RETURN_OK)
+        {
+            LOGE("Cannot get apName for index %d\n", client->apIndex);
+            return;
+        }
+
+        LOGI("%s: Client '%s' connection moving from %s",
+             ifname, client->mac, ifname_old);
+        clients_update(ifname_old, client->mac, client->key_id, false);
+        client->apIndex = apIndex;
+    }
+    else
+    {
+        LOGI("%s: Client '%s' re-connected", ifname, client->mac);
+    }
+
+    if (key_id != NULL)
+    {
+        STRSCPY(client->key_id, key_id);
+    }
+
+    clients_update(ifname, client->mac, client->key_id, true);
+
+    return;
+}
+
+void clients_disconnection(INT apIndex, char *mac)
+{
+    client_t        *client;
+    char ifname[256];
+
+    memset(ifname, 0, sizeof(ifname));
+
+    if (wifi_getApName(apIndex, ifname) != RETURN_OK)
+    {
+        LOGE("%s: cannot get apName for index %d\n", __func__, apIndex);
+        return;
+    }
+
+    if (mac == NULL)
+    {
+        return;
+    }
+
+    client = ds_tree_find(&connected_clients, mac);
+    if (client && client->apIndex != apIndex)
+    {
+        LOGI("%s: Client '%s' disconnect ignored (active on %d)",
+             ifname, client->mac, client->apIndex);
+        return;
+    }
+
+    LOGI("%s: Client disconnected (%s)", ifname, mac);
+    clients_update(ifname, mac, client ? client->key_id : NULL, false);
+
+    return;
+}
+
+

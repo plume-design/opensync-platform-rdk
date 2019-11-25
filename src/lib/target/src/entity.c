@@ -44,7 +44,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 /*****************************************************************************/
 
-static struct {
+static struct
+{
     bool        serial_cached;
     char        serial[MAX_CACHE_LEN];
 
@@ -63,8 +64,7 @@ static struct {
  *  PUBLIC definitions
  *****************************************************************************/
 
-bool
-target_serial_get(void *buff, size_t buffsz)
+bool target_serial_get(void *buff, size_t buffsz)
 {
     if (!target_entity_cache.serial_cached)
     {
@@ -81,8 +81,7 @@ target_serial_get(void *buff, size_t buffsz)
     return true;
 }
 
-bool
-target_id_get(void *buff, size_t buffsz)
+bool target_id_get(void *buff, size_t buffsz)
 {
     if (!target_entity_cache.id_cached)
     {
@@ -126,15 +125,13 @@ target_id_get(void *buff, size_t buffsz)
     return true;
 }
 
-bool
-target_sku_get(void *buff, size_t buffsz)
+bool target_sku_get(void *buff, size_t buffsz)
 {
     // SKU info not available
     return false;
 }
 
-bool
-target_model_get(void *buff, size_t buffsz)
+bool target_model_get(void *buff, size_t buffsz)
 {
     if (!target_entity_cache.model_cached)
     {
@@ -151,22 +148,19 @@ target_model_get(void *buff, size_t buffsz)
     return true;
 }
 
-bool
-target_sw_version_get(void *buff, size_t buffsz)
+bool target_sw_version_get(void *buff, size_t buffsz)
 {
     snprintf(buff, buffsz, "%s", app_build_ver_get());
     return true;
 }
 
-bool
-target_hw_revision_get(void *buff, size_t buffsz)
+bool target_hw_revision_get(void *buff, size_t buffsz)
 {
     // HW version info not available
     return false;
 }
 
-bool
-target_platform_version_get(void *buff, size_t buffsz)
+bool target_platform_version_get(void *buff, size_t buffsz)
 {
     if (!target_entity_cache.pver_cached)
     {

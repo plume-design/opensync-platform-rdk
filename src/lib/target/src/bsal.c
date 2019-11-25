@@ -61,17 +61,20 @@ static bsal_event_cb_t _bsal_event_cb = NULL;
  */
 static bsal_group_t group;
 
-static c_item_t map_disc_source[] = {
+static c_item_t map_disc_source[] =
+{
     C_ITEM_VAL(DISCONNECT_SOURCE_LOCAL, BSAL_DISC_SOURCE_LOCAL),
     C_ITEM_VAL(DISCONNECT_SOURCE_REMOTE, BSAL_DISC_SOURCE_REMOTE)
 };
 
-static c_item_t map_disc_type[] = {
+static c_item_t map_disc_type[] =
+{
     C_ITEM_VAL(DISCONNECT_TYPE_DISASSOC, BSAL_DISC_TYPE_DISASSOC),
     C_ITEM_VAL(DISCONNECT_TYPE_DEAUTH, BSAL_DISC_TYPE_DEAUTH)
 };
 
-static c_item_t map_rssi_xing[] = {
+static c_item_t map_rssi_xing[] =
+{
     C_ITEM_VAL(WIFI_STEERING_RSSI_UNCHANGED, BSAL_RSSI_UNCHANGED),
     C_ITEM_VAL(WIFI_STEERING_RSSI_LOWER, BSAL_RSSI_LOWER),
     C_ITEM_VAL(WIFI_STEERING_RSSI_HIGHER, BSAL_RSSI_HIGHER)
@@ -88,24 +91,30 @@ static void process_event(
     uint32_t val = 0;
 
     // If we don't have a callback, just ignore the data
-    if (!_bsal_event_cb) {
+    if (_bsal_event_cb == NULL)
+    {
         goto end;
     }
 
-    if (!(bsal_event = (bsal_event_t *)calloc(1, sizeof(*bsal_event)))) {
+    bsal_event = (bsal_event_t *)calloc(1, sizeof(*bsal_event));
+    if (bsal_event == NULL)
+    {
         LOGE("BSAL Failed to allocate memory for new event");
         goto end;
     }
 
-    if (group.iface_24g && group.iface_24g->wifihal_cfg.apIndex == wifi_hal_event->apIndex) {
+    if (group.iface_24g && group.iface_24g->wifihal_cfg.apIndex == wifi_hal_event->apIndex)
+    {
         band = BSAL_BAND_24G;
         STRSCPY(bsal_event->ifname, group.iface_24g->bsal_cfg.ifname);
     }
-    else if (group.iface_5g && group.iface_5g->wifihal_cfg.apIndex == wifi_hal_event->apIndex) {
+    else if (group.iface_5g && group.iface_5g->wifihal_cfg.apIndex == wifi_hal_event->apIndex)
+    {
         band = BSAL_BAND_5G;
         STRSCPY(bsal_event->ifname, group.iface_5g->bsal_cfg.ifname);
     }
-    else {
+    else
+    {
         LOGD("BSAL Dropping event received for unknown iface (apIndex: %d)", wifi_hal_event->apIndex);
         goto end;
     }
@@ -127,7 +136,7 @@ static void process_event(
 
     case WIFI_STEERING_EVENT_AUTH_FAIL:
         LOGT("Event: WIFI_STEERING_EVENT_AUTH_FAIL");
-         /*
+        /*
          * This event happens any time an auth request has failed.
          * This includes normal failures, as well as when band steering has
          * requested it be blocked.
@@ -188,14 +197,16 @@ static void process_event(
                &wifi_hal_event->data.disconnect.client_mac,
                sizeof(bsal_event->data.disconnect.client_addr));
 
-        if (!c_get_value_by_key(map_disc_source, wifi_hal_event->data.disconnect.source, &val)) {
+        if (!c_get_value_by_key(map_disc_source, wifi_hal_event->data.disconnect.source, &val))
+        {
             LOGE("BSAL process_event(WIFI_STEERING_EVENT_CLIENT_DISCONNECT): "
                  "Unknown source %d", wifi_hal_event->data.disconnect.source);
             goto end;
         }
         bsal_event->data.disconnect.source = val;
 
-        if (!c_get_value_by_key(map_disc_type, wifi_hal_event->data.disconnect.type, &val)) {
+        if (!c_get_value_by_key(map_disc_type, wifi_hal_event->data.disconnect.type, &val))
+        {
             LOGE("BSAL process_event(WIFI_STEERING_EVENT_CLIENT_DISCONNECT): "
                  "Unknown type %d", wifi_hal_event->data.disconnect.type);
             goto end;
@@ -228,21 +239,24 @@ static void process_event(
                sizeof(bsal_event->data.rssi_change.client_addr));
         bsal_event->data.rssi_change.rssi = wifi_hal_event->data.rssiXing.rssi;
 
-        if (!c_get_value_by_key(map_rssi_xing, wifi_hal_event->data.rssiXing.inactveXing, &val)) {
+        if (!c_get_value_by_key(map_rssi_xing, wifi_hal_event->data.rssiXing.inactveXing, &val))
+        {
             LOGE("BSAL process_event(WIFI_STEERING_EVENT_RSSI_CROSSING): "
                  "Unknown inact %d", wifi_hal_event->data.rssiXing.inactveXing);
             goto end;
         }
         bsal_event->data.rssi_change.inact_xing = val;
 
-        if (!c_get_value_by_key(map_rssi_xing, wifi_hal_event->data.rssiXing.highXing, &val)) {
+        if (!c_get_value_by_key(map_rssi_xing, wifi_hal_event->data.rssiXing.highXing, &val))
+        {
             LOGE("BSAL process_event(WIFI_STEERING_EVENT_RSSI_CROSSING): "
                  "Unknown high %d", wifi_hal_event->data.rssiXing.highXing);
             goto end;
         }
         bsal_event->data.rssi_change.high_xing = val;
 
-        if (!c_get_value_by_key(map_rssi_xing, wifi_hal_event->data.rssiXing.lowXing, &val)) {
+        if (!c_get_value_by_key(map_rssi_xing, wifi_hal_event->data.rssiXing.lowXing, &val))
+        {
             LOGE("BSAL process_event(WIFI_STEERING_EVENT_RSSI_CROSSING): "
                  "Unknown low %d", wifi_hal_event->data.rssiXing.lowXing);
             goto end;
@@ -284,13 +298,15 @@ static bool lookup_ifname(
     int ret;
 
     ret = wifi_getSSIDNumberOfEntries(&snum);
-    if (ret != RETURN_OK) {
+    if (ret != RETURN_OK)
+    {
         LOGE("BSAL Unable to get number of VAPs (wifi_getSSIDNumberOfEntries() failed with code %d)",
              ret);
         goto error;
     }
 
-    if (snum == 0) {
+    if (snum == 0)
+    {
         LOGE("BSAL No VAPs detected");
         goto error;
     }
@@ -299,26 +315,30 @@ static bool lookup_ifname(
     {
         memset(buf, 0, sizeof(buf));
         ret = wifi_getApName(s, buf);
-        if (ret != RETURN_OK) {
+        if (ret != RETURN_OK)
+        {
             LOGE("BSAL Failed to get ifname of VAO #%u (wifi_getApName() failed with code %d)",
                  s, ret);
             goto error;
         }
 
-        if (strcmp(ifcfg->ifname, buf) != 0) {
+        if (strcmp(ifcfg->ifname, buf) != 0)
+        {
             continue;
         }
 
         break;
     }
 
-    if (s == snum) {
+    if (s == snum)
+    {
         LOGE("BSAL Radio with %s ifname was not found", ifcfg->ifname);
         goto error;
     }
 
     ret = wifi_getSSIDRadioIndex(s, &radio_index);
-    if (ret != RETURN_OK) {
+    if (ret != RETURN_OK)
+    {
         LOGE("BSAL Unable to get radio index (wifi_getSSIDRadioIndex() failed with code %d)",
              ret);
         goto error;
@@ -326,20 +346,24 @@ static bool lookup_ifname(
 
     memset(buf, 0, sizeof(buf));
     ret = wifi_getRadioOperatingFrequencyBand(radio_index, buf);
-    if (ret != RETURN_OK) {
+    if (ret != RETURN_OK)
+    {
         LOGE("BSAL Failed to get operating freq of radio #%d "
              "(wifi_getRadioOperatingFrequencyBand() failed with code %d)",
              radio_index, ret);
         goto error;
     }
 
-    if (buf[0] == '2') {
+    if (buf[0] == '2')
+    {
         iface->band = BSAL_BAND_24G;
     }
-    else if (buf[0] == '5') {
+    else if (buf[0] == '5')
+    {
         iface->band = BSAL_BAND_5G;
     }
-    else {
+    else
+    {
         LOGE("BSAL Radio #%d has unknown operating freq %s", radio_index, buf);
         goto error;
     }
@@ -363,11 +387,13 @@ error:
 
 static iface_t* group_get_iface_by_name(const char *ifname)
 {
-    if (group.iface_24g && (strcmp(ifname, group.iface_24g->bsal_cfg.ifname) == 0)) {
+    if (group.iface_24g && (strcmp(ifname, group.iface_24g->bsal_cfg.ifname) == 0))
+    {
         return group.iface_24g;
     }
 
-    if (group.iface_5g && (strcmp(ifname, group.iface_5g->bsal_cfg.ifname) == 0)) {
+    if (group.iface_5g && (strcmp(ifname, group.iface_5g->bsal_cfg.ifname) == 0))
+    {
         return group.iface_5g;
     }
 
@@ -397,7 +423,8 @@ int target_bsal_init(
 {
     int ret;
 
-    if (_bsal_event_cb) {
+    if (_bsal_event_cb != NULL)
+    {
         LOGW("BSAL callback already initialized");
         goto error;
     }
@@ -407,7 +434,8 @@ int target_bsal_init(
 
     // Register the callback
     ret = wifi_steering_eventRegister(process_event);
-    if (ret < 0) {
+    if (ret < 0)
+    {
         LOGE("BSAL Event callback registration failed (wifi_steering_eventRegister() "
              "failed with code %d)", ret);
         goto error;
@@ -436,14 +464,16 @@ int target_bsal_iface_add(const bsal_ifconfig_t *ifcfg)
 {
     iface_t iface;
 
-    if (!lookup_ifname(ifcfg, &iface)) {
+    if (!lookup_ifname(ifcfg, &iface))
+    {
         LOGE("BSAL Failed to lookup radio with ifname: %s", ifcfg->ifname);
         goto error;
     }
 
     if (iface.band == BSAL_BAND_24G)
     {
-        if (group.iface_24g) {
+        if (group.iface_24g != NULL)
+        {
             LOGE("BSAL 2.4G iface: %s is already configured", group.iface_24g->bsal_cfg.ifname);
             goto error;
         }
@@ -454,7 +484,8 @@ int target_bsal_iface_add(const bsal_ifconfig_t *ifcfg)
 
     if (iface.band == BSAL_BAND_5G)
     {
-        if (group.iface_5g) {
+        if (group.iface_5g != NULL)
+        {
             LOGE("BSAL 5G iface: %s is already configured", group.iface_5g->bsal_cfg.ifname);
             goto error;
         }
@@ -463,13 +494,14 @@ int target_bsal_iface_add(const bsal_ifconfig_t *ifcfg)
         group.iface_5g = &group._iface_5g;
     }
 
-    if (group.iface_24g && group.iface_5g)
+    if ((group.iface_24g != NULL) && (group.iface_5g != NULL))
     {
         int ret = wifi_steering_setGroup(group.index,
                                          &group.iface_24g->wifihal_cfg,
                                          &group.iface_5g->wifihal_cfg);
 
-        if (ret != RETURN_OK) {
+        if (ret != RETURN_OK)
+        {
             LOGE("BSAL Failed to add radio group #%u of ifaces: %s and %s "
                  " (wifi_steering_setGroup() failed with code %d)",
                  group.index,
@@ -501,14 +533,16 @@ int target_bsal_iface_update(const bsal_ifconfig_t *ifcfg)
 {
     iface_t iface;
 
-    if (!lookup_ifname(ifcfg, &iface)) {
+    if (!lookup_ifname(ifcfg, &iface))
+    {
         LOGE("BSAL Failed to lookup radio with ifname: %s", ifcfg->ifname);
         goto error;
     }
 
     if (iface.band == BSAL_BAND_24G)
     {
-        if (!group.iface_24g) {
+        if (group.iface_24g == NULL)
+        {
             LOGE("BSAL 2.4G iface is not configured");
             goto error;
         }
@@ -519,7 +553,8 @@ int target_bsal_iface_update(const bsal_ifconfig_t *ifcfg)
 
     if (iface.band == BSAL_BAND_5G)
     {
-        if (!group.iface_5g) {
+        if (group.iface_5g == NULL)
+        {
             LOGE("BSAL 5G iface is not already configured");
             goto error;
         }
@@ -528,7 +563,7 @@ int target_bsal_iface_update(const bsal_ifconfig_t *ifcfg)
         group.iface_5g = &group._iface_5g;
     }
 
-    if (group.iface_24g && group.iface_5g)
+    if ((group.iface_24g != NULL) && (group.iface_5g != NULL))
     {
         // Unfortunately, the underlying setGroup implementation can fail
         // if both configs are already set. Because there is no WifiHAL
@@ -536,7 +571,8 @@ int target_bsal_iface_update(const bsal_ifconfig_t *ifcfg)
         // add it back with new configs.
         int ret = wifi_steering_setGroup(group.index, NULL, NULL);
 
-        if (ret != RETURN_OK) {
+        if (ret != RETURN_OK)
+        {
             LOGE("BSAL Failed to remove radio group #%u during update "
                  "(wifi_steering_setGroup() failed with code %d)",
                  group.index,
@@ -548,7 +584,8 @@ int target_bsal_iface_update(const bsal_ifconfig_t *ifcfg)
                                      &group.iface_24g->wifihal_cfg,
                                      &group.iface_5g->wifihal_cfg);
 
-        if (ret != RETURN_OK) {
+        if (ret != RETURN_OK)
+        {
             LOGE("BSAL Failed to update radio group #%u of ifaces: %s and %s "
                  " (wifi_steering_setGroup() failed with code %d)",
                  group.index,
@@ -588,7 +625,8 @@ int target_bsal_iface_remove(const bsal_ifconfig_t *ifcfg)
 
     if (iface.band == BSAL_BAND_24G)
     {
-        if (!group.iface_24g) {
+        if (group.iface_24g == NULL)
+        {
             LOGE("BSAL 2.4G iface is not configured");
             goto error;
         }
@@ -598,7 +636,8 @@ int target_bsal_iface_remove(const bsal_ifconfig_t *ifcfg)
 
     if (iface.band == BSAL_BAND_5G)
     {
-        if (!group.iface_5g) {
+        if (group.iface_5g == NULL)
+        {
             LOGE("BSAL 5G iface is not already configured");
             goto error;
         }
@@ -606,11 +645,12 @@ int target_bsal_iface_remove(const bsal_ifconfig_t *ifcfg)
         group.iface_5g = NULL;
     }
 
-    if ((!group.iface_24g) && (!group.iface_5g))
+    if ((group.iface_24g == NULL) && (group.iface_5g == NULL))
     {
         int ret = wifi_steering_setGroup(group.index, NULL, NULL);
 
-        if (ret != RETURN_OK) {
+        if (ret != RETURN_OK)
+        {
             LOGE("BSAL Failed to remove radio group #%u (wifi_steering_setGroup() failed with code %d)",
                  group.index, ret);
             goto error;
@@ -641,23 +681,24 @@ int target_bsal_client_add(
     int ret = 0;
 
     iface = group_get_iface_by_name(ifname);
-    if (!iface) {
-        LOGE("BSAL Unable to add client "MAC_ADDR_FMT" (failed to find iface: %s)", MAC_ADDR_UNPACK(mac_addr),
-             ifname);
+    if (iface == NULL)
+    {
+        LOGE("BSAL Unable to add client "MAC_ADDR_FMT" (failed to find iface: %s)",
+             MAC_ADDR_UNPACK(mac_addr), ifname);
         goto error;
     }
 
     bsal_client_to_wifi_steering_client(cfg, &wifihal_cfg);
 
     ret = wifi_steering_clientSet(group.index, iface->wifihal_cfg.apIndex, (UCHAR*) mac_addr, &wifihal_cfg);
-    if (ret != RETURN_OK) {
+    if (ret != RETURN_OK)
+    {
         LOGE("BSAL Failed to add client "MAC_ADDR_FMT" to iface: %s (wifi_steering_clientSet() "
              "failed with code %d)", MAC_ADDR_UNPACK(mac_addr), iface->bsal_cfg.ifname, ret);
         goto error;
     }
 
-    LOGI("BSAL Client "MAC_ADDR_FMT" added to iface: %s", MAC_ADDR_UNPACK(mac_addr),
-         ifname);
+    LOGI("BSAL Client "MAC_ADDR_FMT" added to iface: %s", MAC_ADDR_UNPACK(mac_addr), ifname);
 
     return 0;
 
@@ -675,23 +716,24 @@ int target_bsal_client_update(
     int ret = 0;
 
     iface = group_get_iface_by_name(ifname);
-    if (!iface) {
-        LOGE("BSAL Unable to update client "MAC_ADDR_FMT" (failed to find iface: %s)", MAC_ADDR_UNPACK(mac_addr),
-             ifname);
+    if (iface == NULL)
+    {
+        LOGE("BSAL Unable to update client "MAC_ADDR_FMT" (failed to find iface: %s)",
+             MAC_ADDR_UNPACK(mac_addr), ifname);
         goto error;
     }
 
     bsal_client_to_wifi_steering_client(cfg, &wifihal_cfg);
 
     ret = wifi_steering_clientSet(group.index, iface->wifihal_cfg.apIndex, (UCHAR*) mac_addr, &wifihal_cfg);
-    if (ret != RETURN_OK) {
+    if (ret != RETURN_OK)
+    {
         LOGE("BSAL Failed to update client "MAC_ADDR_FMT" to iface: %s (wifi_steering_clientSet() "
              "failed with code %d)", MAC_ADDR_UNPACK(mac_addr), iface->bsal_cfg.ifname, ret);
         goto error;
     }
 
-    LOGI("BSAL Client "MAC_ADDR_FMT" updated on iface: %s", MAC_ADDR_UNPACK(mac_addr),
-         ifname);
+    LOGI("BSAL Client "MAC_ADDR_FMT" updated on iface: %s", MAC_ADDR_UNPACK(mac_addr), ifname);
 
     return 0;
 
@@ -707,21 +749,22 @@ int target_bsal_client_remove(
     int ret = 0;
 
     iface = group_get_iface_by_name(ifname);
-    if (!iface) {
-        LOGE("BSAL Unable to remove client "MAC_ADDR_FMT" (failed to find iface: %s)", MAC_ADDR_UNPACK(mac_addr),
-             ifname);
+    if (iface == NULL)
+    {
+        LOGE("BSAL Unable to remove client "MAC_ADDR_FMT" (failed to find iface: %s)",
+             MAC_ADDR_UNPACK(mac_addr), ifname);
         goto error;
     }
 
     ret = wifi_steering_clientRemove(group.index, iface->wifihal_cfg.apIndex, (UCHAR*) mac_addr);
-    if (ret != RETURN_OK) {
+    if (ret != RETURN_OK)
+    {
         LOGE("BSAL Failed to remove client "MAC_ADDR_FMT" to iface: %s (wifi_steering_clientRemove() "
              "failed with code %d)", MAC_ADDR_UNPACK(mac_addr), iface->bsal_cfg.ifname, ret);
         goto error;
     }
 
-    LOGI("BSAL Client "MAC_ADDR_FMT" removed from iface: %s", MAC_ADDR_UNPACK(mac_addr),
-         ifname);
+    LOGI("BSAL Client "MAC_ADDR_FMT" removed from iface: %s", MAC_ADDR_UNPACK(mac_addr), ifname);
 
     return 0;
 
@@ -738,21 +781,22 @@ int target_bsal_client_measure(
     int ret = 0;
 
     iface = group_get_iface_by_name(ifname);
-    if (!iface) {
-        LOGE("BSAL Unable to trigger measurement for client "MAC_ADDR_FMT" (failed to find iface: %s)", MAC_ADDR_UNPACK(mac_addr),
-             ifname);
+    if (iface == NULL)
+    {
+        LOGE("BSAL Unable to trigger measurement for client "MAC_ADDR_FMT" (failed to find iface: %s)",
+             MAC_ADDR_UNPACK(mac_addr), ifname);
         goto error;
     }
 
     ret = wifi_steering_clientMeasure(group.index, iface->wifihal_cfg.apIndex, (UCHAR*) mac_addr);
-    if (ret != RETURN_OK) {
+    if (ret != RETURN_OK)
+    {
         LOGE("BSAL Failed to trigger measurement for client "MAC_ADDR_FMT" to iface: %s (wifi_steering_clientMeasure() "
              "failed with code %d)", MAC_ADDR_UNPACK(mac_addr), iface->bsal_cfg.ifname, ret);
         goto error;
     }
 
-    LOGI("BSAL Triggered measurement for client "MAC_ADDR_FMT" on iface: %s", MAC_ADDR_UNPACK(mac_addr),
-         ifname);
+    LOGI("BSAL Triggered measurement for client "MAC_ADDR_FMT" on iface: %s", MAC_ADDR_UNPACK(mac_addr), ifname);
 
     return 0;
 
@@ -771,9 +815,10 @@ int target_bsal_client_disconnect(
     wifi_disconnectType_t disc_type = DISCONNECT_TYPE_DEAUTH;
 
     iface = group_get_iface_by_name(ifname);
-    if (!iface) {
-        LOGE("BSAL Unable to disconnect client "MAC_ADDR_FMT" (failed to find iface: %s)", MAC_ADDR_UNPACK(mac_addr),
-             ifname);
+    if (iface == NULL)
+    {
+        LOGE("BSAL Unable to disconnect client "MAC_ADDR_FMT" (failed to find iface: %s)",
+             MAC_ADDR_UNPACK(mac_addr), ifname);
         goto error;
     }
 
@@ -792,14 +837,14 @@ int target_bsal_client_disconnect(
     }
 
     ret = wifi_steering_clientDisconnect(group.index, iface->wifihal_cfg.apIndex, (UCHAR*) mac_addr, disc_type, reason);
-    if (ret != RETURN_OK) {
+    if (ret != RETURN_OK)
+    {
         LOGE("BSAL Failed disconnect client "MAC_ADDR_FMT" to iface: %s (wifi_steering_clientDisconnect() "
              "failed with code %d)", MAC_ADDR_UNPACK(mac_addr), iface->bsal_cfg.ifname, ret);
         goto error;
     }
 
-    LOGI("BSAL Disconnected client  "MAC_ADDR_FMT" on iface: %s", MAC_ADDR_UNPACK(mac_addr),
-         ifname);
+    LOGI("BSAL Disconnected client  "MAC_ADDR_FMT" on iface: %s", MAC_ADDR_UNPACK(mac_addr), ifname);
 
     return 0;
 
@@ -819,16 +864,18 @@ int target_bsal_client_is_connected(
     int result = 0;  // Not connected
 
     iface = group_get_iface_by_name(ifname);
-    if (!iface) {
-        LOGE("BSAL Unable check if client "MAC_ADDR_FMT" is connected (failed to find iface: %s)", MAC_ADDR_UNPACK(mac_addr),
-             ifname);
+    if (iface == NULL)
+    {
+        LOGE("BSAL Unable check if client "MAC_ADDR_FMT" is connected (failed to find iface: %s)",
+             MAC_ADDR_UNPACK(mac_addr), ifname);
         result = -1;
         goto end;
     }
 
     ret = wifi_getApAssociatedDeviceDiagnosticResult2(iface->wifihal_cfg.apIndex, &clients, &clients_num);
-    if (ret != RETURN_OK) {
-        LOGE("BSAL Failed to fetch clients associated with iface: %s (wifi_getApAssociatedDeviceDiagnosticResult3() "
+    if (ret != RETURN_OK)
+    {
+        LOGE("BSAL Failed to fetch clients associated with iface: %s (wifi_getApAssociatedDeviceDiagnosticResult2() "
              "failed with code %d)", iface->bsal_cfg.ifname, ret);
         result = -1;
         goto end;
@@ -863,7 +910,8 @@ int target_bsal_bss_tm_request(
     int ret = 0;
 
     iface = group_get_iface_by_name(ifname);
-    if (!iface) {
+    if (iface == NULL)
+    {
         LOGE("BSAL Unable to prepare BTM request for client "MAC_ADDR_FMT" is connected (failed to find iface: %s)",
              MAC_ADDR_UNPACK(mac_addr), ifname);
         goto error;
@@ -871,7 +919,7 @@ int target_bsal_bss_tm_request(
 
     memset(&req, 0, sizeof(req));
 
-    if (btm_params->bss_term)
+    if (btm_params->bss_term == true)
     {
         bss_term_flag = 1;
         req.termDuration.tsf = 0;  // imminently
@@ -886,7 +934,7 @@ int target_bsal_bss_tm_request(
     assert(btm_params->num_neigh < MAX_CANDIDATES);
 
     // Build neighbor list
-    for (i = 0 ; i < btm_params->num_neigh ; i++)
+    for (i = 0; i < btm_params->num_neigh; i++)
     {
         const bsal_neigh_info_t *neigh = &btm_params->neigh[i];
 
@@ -903,8 +951,9 @@ int target_bsal_bss_tm_request(
     }
 
     ret = wifi_setBTMRequest(iface->wifihal_cfg.apIndex, (CHAR*) mac_addr, &req);
-    if (ret != RETURN_OK) {
-        LOGE("BSAL Failed to send BTM request to client "MAC_ADDR_FMT" on iface: %s (wifi_getApAssociatedDeviceDiagnosticResult3() "
+    if (ret != RETURN_OK)
+    {
+        LOGE("BSAL Failed to send BTM request to client "MAC_ADDR_FMT" on iface: %s (wifi_setBTMRequest() "
              "failed with code %d)", MAC_ADDR_UNPACK(mac_addr), iface->bsal_cfg.ifname, ret);
         goto error;
     }
@@ -928,7 +977,8 @@ int target_bsal_rrm_beacon_report_request(
     int ret = 0;
 
     iface = group_get_iface_by_name(ifname);
-    if (!iface) {
+    if (iface == NULL)
+    {
         LOGE("BSAL Unable to prepare RRM request for client "MAC_ADDR_FMT" is connected (failed to find iface: %s)",
              MAC_ADDR_UNPACK(mac_addr), ifname);
         goto error;
@@ -942,7 +992,8 @@ int target_bsal_rrm_beacon_report_request(
     /*req.numRepetitions = 1;*/  // This field is not available in wifi_BeaconRequest_t
     req.duration = rrm_params->meas_dur;
 
-    if (rrm_params->req_ssid != 2) {
+    if (rrm_params->req_ssid != 2)
+    {
         LOGW( "BSAL Incorrect req_ssid: %d, expecting: 2", rrm_params->req_ssid);
         goto error;
     }
@@ -951,8 +1002,9 @@ int target_bsal_rrm_beacon_report_request(
     memset(req.bssid, 0xFF, sizeof(req.bssid));
 
     ret = wifi_setRMBeaconRequest(iface->wifihal_cfg.apIndex, (CHAR*) mac_addr, &req, &dia_token);
-    if (ret != RETURN_OK) {
-        LOGE("BSAL Failed to send RRM request to client "MAC_ADDR_FMT" on iface: %s (wifi_getApAssociatedDeviceDiagnosticResult3() "
+    if (ret != RETURN_OK)
+    {
+        LOGE("BSAL Failed to send RRM request to client "MAC_ADDR_FMT" on iface: %s (wifi_setRMBeaconRequest() "
              "failed with code %d)", MAC_ADDR_UNPACK(mac_addr), iface->bsal_cfg.ifname, ret);
         goto error;
     }

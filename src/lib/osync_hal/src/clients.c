@@ -24,59 +24,12 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <stdio.h>
-
-#include "os.h"
-#include "log.h"
-
-#include "target.h"
+#include "osync_hal.h"
 
 
-#define MODULE_ID LOG_MODULE_ID_OSA
-
-
-/******************************************************************************
- *  PUBLIC definitions
- *****************************************************************************/
-
-target_managers_config_t target_managers_config[] =
+#ifdef OSYNC_HAL_USE_DEFAULT_FETCH_CONNECTED_CLIENTS
+osync_hal_return_t osync_hal_fetch_connected_clients(osync_hal_handle_client_fn handle_client_fn)
 {
-    {
-        .name = TARGET_MANAGER_PATH("cm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("qm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("sm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("wm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("nm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("lm"),
-        .needs_plan_b = false,
-    },
-
-#if !defined(BUILD_DISABLE_BM)
-    {
-        .name = TARGET_MANAGER_PATH("bm"),
-        .needs_plan_b = false,
-    },
-#endif /* !defined(BUILD_DISABLE_BM) */
-};
-
-int target_managers_num = ARRAY_SIZE(target_managers_config);
+    return OSYNC_HAL_SUCCESS;
+}
+#endif /* OSYNC_HAL_USE_DEFAULT_FETCH_CONNECTED_CLIENTS */

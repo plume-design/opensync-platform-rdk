@@ -24,59 +24,105 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
 
-#include "os.h"
+#include "osn_inet6.h"
+#include "osn_types.h"
+
 #include "log.h"
+#include "util.h"
+#include "const.h"
 
-#include "target.h"
+typedef struct osn_nl osn_nl_t;
 
-
-#define MODULE_ID LOG_MODULE_ID_OSA
-
-
-/******************************************************************************
- *  PUBLIC definitions
- *****************************************************************************/
-
-target_managers_config_t target_managers_config[] =
+struct osn_ip6
 {
-    {
-        .name = TARGET_MANAGER_PATH("cm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("qm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("sm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("wm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("nm"),
-        .needs_plan_b = false,
-    },
-
-    {
-        .name = TARGET_MANAGER_PATH("lm"),
-        .needs_plan_b = false,
-    },
-
-#if !defined(BUILD_DISABLE_BM)
-    {
-        .name = TARGET_MANAGER_PATH("bm"),
-        .needs_plan_b = false,
-    },
-#endif /* !defined(BUILD_DISABLE_BM) */
+    int foo;
 };
 
-int target_managers_num = ARRAY_SIZE(target_managers_config);
+static osn_ip6_t dummy_ip6_t;
+
+osn_ip6_t* osn_ip6_new(const char *ifname)
+{
+    return &dummy_ip6_t;
+}
+
+bool osn_ip6_del(osn_ip6_t *self)
+{
+    return true;
+}
+
+bool osn_ip6_apply(osn_ip6_t *self)
+{
+    return true;
+}
+
+bool osn_ip6_addr_add(
+        osn_ip6_t *self,
+        const osn_ip6_addr_t *addr)
+{
+    return true;
+}
+
+bool osn_ip6_addr_del(
+        osn_ip6_t *ip6,
+        const osn_ip6_addr_t *dns)
+{
+    return true;
+}
+
+bool osn_ip6_dns_add(
+        osn_ip6_t *ip6,
+        const osn_ip6_addr_t *dns)
+{
+    return false;
+}
+
+bool osn_ip6_dns_del(
+        osn_ip6_t *ip6,
+        const osn_ip6_addr_t *addr)
+{
+    return false;
+}
+
+bool osn_ip6_ipaddr_parse(
+        void *_self,
+        int type,
+        const char *line)
+{
+    return true;
+}
+
+void osn_ip6_status_ipaddr_update(osn_ip6_t *self)
+{
+    return;
+}
+
+bool osn_ip6_neigh_parse(
+        void *_self,
+        int type,
+        const char *line)
+{
+    return true;
+}
+
+void osn_ip6_status_neigh_update(osn_ip6_t *self)
+{
+    return;
+}
+
+void osn_ip6_nl_fn(
+        osn_nl_t *nl,
+        uint64_t event,
+        const char *ifname)
+{
+    return;
+}
+
+void osn_ip6_status_notify(
+        osn_ip6_t *self,
+        osn_ip6_status_fn_t *fn, void *data)
+{
+    return;
+}

@@ -116,6 +116,7 @@ ifneq ($(RDK_MODEL),)
 ROOTFS_COMPONENTS += model/$(RDK_MODEL)
 endif
 
+KCONFIG_TARGET ?= platform/rdk/kconfig/RDK
 
 all: build_all rootfs
 

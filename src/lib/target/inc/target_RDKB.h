@@ -28,7 +28,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define TARGET_RDKB_H_INCLUDED
 
 #include "schema.h"
-#include "wifihal.h"
+#include "osync_hal.h"
+#include "target_internal.h"
 
 #define TARGET_LOG_PREFIX           "[Mesh]"
 #define TARGET_LOG_HAS_LEVEL
@@ -64,7 +65,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /******************************************************************************
  *  CLIENT definitions
  *****************************************************************************/
-typedef wifihal_client_record_t target_client_record_t;
 
 /******************************************************************************
  *  RADIO definitions
@@ -83,7 +83,6 @@ bool target_vif_config_get(char *ifname, struct schema_Wifi_VIF_Config *vconf);
 /******************************************************************************
  *  SURVEY definitions
  *****************************************************************************/
-typedef wifihal_survey_record_t    target_survey_record_t;
 
 /******************************************************************************
  *  NEIGHBOR definitions
@@ -96,7 +95,6 @@ typedef wifihal_survey_record_t    target_survey_record_t;
 /******************************************************************************
  *  CAPACITY definitions
  *****************************************************************************/
-typedef wifihal_capacity_data_t target_capacity_data_t;
 
 /******************************************************************************
  *  MAP definitions
@@ -120,13 +118,6 @@ extern uint16_t target_map_bridge_to_vlan(const char *bridge);
 #ifndef STATS_CUMULATIVE_SURVEY_OFFCHAN
 #define STATS_CUMULATIVE_SURVEY_OFFCHAN 1
 #endif
-
-/******************************************************************************
- *  DHCP definitions
- *****************************************************************************/
-extern bool     target_dhcp_lease_parse_file(char *filename);
-extern bool     target_dhcp_lease_upsert(struct schema_DHCP_leased_IP *dlip);
-extern bool     target_dhcp_lease_remove(struct schema_DHCP_leased_IP *dlip);
 
 #include "target_common.h"
 

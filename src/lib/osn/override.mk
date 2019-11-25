@@ -22,20 +22,30 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-UNIT_NAME := dmcli
+##############################################################################
+#
+# RDK unit override for target library
+#
+##############################################################################
+UNIT_CFLAGS += -I$(UNIT_PATH)/inc
+UNIT_EXPORT_CFLAGS := -I$(UNIT_PATH)/inc
 
-UNIT_TYPE   := LIB
+UNIT_SRC := src/osn_inet.c
+UNIT_SRC += src/osn_types.c
 
-# List of source files, relative to the unit folder
-UNIT_SRC    := dmcli.c
+UNIT_SRC_DIR := $(OVERRIDE_DIR)/src
+UNIT_SRC_TOP += $(UNIT_SRC_DIR)/osn_upnpd.c
+UNIT_SRC_TOP += $(UNIT_SRC_DIR)/osn_dhcpc.c
+UNIT_SRC_TOP += $(UNIT_SRC_DIR)/osn_route.c
+UNIT_SRC_TOP += $(UNIT_SRC_DIR)/osn_dhcps.c
+UNIT_SRC_TOP += $(UNIT_SRC_DIR)/osn_dhcps6.c
+UNIT_SRC_TOP += $(UNIT_SRC_DIR)/osn_odhcp6c.c
+UNIT_SRC_TOP += $(UNIT_SRC_DIR)/osn_inet6.c
 
-UNIT_CFLAGS := -I$(UNIT_PATH)/inc
+UNIT_DEPS += src/lib/log
+UNIT_DEPS += src/lib/daemon
+UNIT_DEPS += src/lib/evx
+UNIT_DEPS += src/lib/ds
 
-UNIT_LDFLAGS := $(SDK_LIB_DIR)
-
-UNIT_EXPORT_CFLAGS := $(UNIT_CFLAGS)
+UNIT_EXPORT_CFLAGS  := $(UNIT_CFLAGS)
 UNIT_EXPORT_LDFLAGS := $(UNIT_LDFLAGS)
-
-UNIT_DEPS := src/lib/common
-
-UNIT_DEPS_CFLAGS += src/lib/target

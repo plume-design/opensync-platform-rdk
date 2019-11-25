@@ -24,98 +24,47 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-/*
- * wifihal_cloud_mode.c
- *
- * RDKB Platform - Wifi HAL - Cloud Mode Handling
- */
-
-#include <stdio.h>
-#include <stdint.h>
 #include <string.h>
-#include <stdlib.h>
-#include <ctype.h>
+#include <stddef.h>
 #include <stdbool.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <unistd.h>
-#include <ev.h>
 
-#include <mesh/meshsync_msgs.h>
-
-#include "os.h"
-#include "os_nif.h"
-#include "log.h"
-#include "const.h"
 #include "devinfo.h"
-#include "wifihal.h"
-#include "target.h"
+#include "osync_hal.h"
+#include "const.h"
 
-#ifndef __WIFI_HAL_H__
-#include <ccsp/wifi_hal.h>
-#endif
 
-/*****************************************************************************/
-
-#define MODULE_ID   LOG_MODULE_ID_HAL
-
-/*****************************************************************************/
-
-static wifihal_cloud_mode_t wifihal_cloud_mode = WIFIHAL_CLOUD_MODE_UNKNOWN;
-
-/*****************************************************************************/
-
-bool
-wifihal_cloud_mode_init(void)
+#ifdef OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE
+osync_hal_return_t osync_hal_devinfo_get_cloud_mode(osync_hal_devinfo_cloud_mode_t *mode)
 {
-    wifihal_cloud_mode_t    mode = WIFIHAL_CLOUD_MODE_MONITOR;
-    char                    buf[128];
+    char buf[128];
+
+    memset(buf, 0, sizeof(buf));
 
     if (devinfo_getv(DEVINFO_MESH_STATE, ARRAY_AND_SIZE(buf), false))
     {
+        *mode = OSYNC_HAL_DEVINFO_CLOUD_MODE_MONITOR;
         if (!strncmp(buf, "Full", 4) || !strncmp(buf, "full", 4))
         {
-            mode = WIFIHAL_CLOUD_MODE_FULL;
+            *mode = OSYNC_HAL_DEVINFO_CLOUD_MODE_FULL;
         }
+        return OSYNC_HAL_SUCCESS;
     }
 
-    wifihal_cloud_mode = mode;
-
-    return true;
+    return OSYNC_HAL_FAILURE;
 }
+#endif /* OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE */
 
-bool
-wifihal_cloud_mode_sync(void)
+
+#ifdef OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR
+osync_hal_return_t osync_hal_devinfo_get_redirector_addr(
+        char *buf,
+        size_t bufsz)
 {
-    return wifihal_sync_send_status(wifihal_cloud_mode);
-}
-
-bool
-wifihal_cloud_mode_set(wifihal_cloud_mode_t mode)
-{
-    wifihal_cloud_mode = mode;
-
-    return wifihal_cloud_mode_sync();
-}
-
-wifihal_cloud_mode_t
-wifihal_cloud_mode_get(void)
-{
-    return wifihal_cloud_mode;
-}
-
-wifihal_chan_mode_t
-wifihal_cloud_mode_get_chan_mode(wifihal_radio_t *radio)
-{
-    if (wifihal_cloud_mode_get() == WIFIHAL_CLOUD_MODE_FULL)
+    if (!devinfo_getv(DEVINFO_MESH_URL, buf, bufsz, false))
     {
-        return WIFIHAL_CHAN_MODE_CLOUD;
+        return OSYNC_HAL_FAILURE;
     }
 
-    if (radio->auto_chan)
-    {
-        return WIFIHAL_CHAN_MODE_AUTO;
-    }
-
-    return WIFIHAL_CHAN_MODE_MANUAL;
+    return OSYNC_HAL_SUCCESS;
 }
+#endif /* OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR */

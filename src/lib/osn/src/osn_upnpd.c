@@ -24,59 +24,43 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <stdio.h>
+#include <stdlib.h>
 
-#include "os.h"
-#include "log.h"
+#include "osn_upnp.h"
 
-#include "target.h"
+static int dummy_osn_upnp;
 
-
-#define MODULE_ID LOG_MODULE_ID_OSA
-
-
-/******************************************************************************
- *  PUBLIC definitions
- *****************************************************************************/
-
-target_managers_config_t target_managers_config[] =
+osn_upnp_t* osn_upnp_new(const char *ifname)
 {
-    {
-        .name = TARGET_MANAGER_PATH("cm"),
-        .needs_plan_b = false,
-    },
+    return (osn_upnp_t *)&dummy_osn_upnp;
+}
 
-    {
-        .name = TARGET_MANAGER_PATH("qm"),
-        .needs_plan_b = false,
-    },
+bool osn_upnp_del(osn_upnp_t *self)
+{
+    return true;
+}
 
-    {
-        .name = TARGET_MANAGER_PATH("sm"),
-        .needs_plan_b = false,
-    },
+bool osn_upnp_set(
+        osn_upnp_t *self,
+        enum osn_upnp_mode mode)
+{
+    return true;
+}
 
-    {
-        .name = TARGET_MANAGER_PATH("wm"),
-        .needs_plan_b = false,
-    },
+bool osn_upnp_get(
+        osn_upnp_t *self,
+        enum osn_upnp_mode *mode)
+{
+    return true;
+}
 
-    {
-        .name = TARGET_MANAGER_PATH("nm"),
-        .needs_plan_b = false,
-    },
+bool osn_upnp_start(osn_upnp_t *self)
+{
+    return false;
+}
 
-    {
-        .name = TARGET_MANAGER_PATH("lm"),
-        .needs_plan_b = false,
-    },
+bool osn_upnp_stop(osn_upnp_t *self)
+{
+    return true;
+}
 
-#if !defined(BUILD_DISABLE_BM)
-    {
-        .name = TARGET_MANAGER_PATH("bm"),
-        .needs_plan_b = false,
-    },
-#endif /* !defined(BUILD_DISABLE_BM) */
-};
-
-int target_managers_num = ARRAY_SIZE(target_managers_config);

@@ -24,59 +24,74 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <stdio.h>
+#include <stdlib.h>
 
-#include "os.h"
-#include "log.h"
+#include "osn_dhcp.h"
 
-#include "target.h"
+static int osn_dhcp_client;
 
-
-#define MODULE_ID LOG_MODULE_ID_OSA
-
-
-/******************************************************************************
- *  PUBLIC definitions
- *****************************************************************************/
-
-target_managers_config_t target_managers_config[] =
+bool osn_dhcp_client_start(osn_dhcp_client_t *self)
 {
-    {
-        .name = TARGET_MANAGER_PATH("cm"),
-        .needs_plan_b = false,
-    },
+    return true;
+}
 
-    {
-        .name = TARGET_MANAGER_PATH("qm"),
-        .needs_plan_b = false,
-    },
+bool osn_dhcp_client_stop(osn_dhcp_client_t *self)
+{
+    return true;
+}
 
-    {
-        .name = TARGET_MANAGER_PATH("sm"),
-        .needs_plan_b = false,
-    },
+osn_dhcp_client_t* osn_dhcp_client_new(const char *ifname)
+{
+    /* The actual content of the structure is internal to
+     * this module so we can return whatever pointer, as it is
+     * not going to be accessed outside of this module anyway.
+     */
+    return (osn_dhcp_client_t *)&osn_dhcp_client;
+}
 
-    {
-        .name = TARGET_MANAGER_PATH("wm"),
-        .needs_plan_b = false,
-    },
+bool osn_dhcp_client_del(osn_dhcp_client_t *self)
+{
+    return true;
+}
 
-    {
-        .name = TARGET_MANAGER_PATH("nm"),
-        .needs_plan_b = false,
-    },
+bool osn_dhcp_client_opt_set(
+        osn_dhcp_client_t *self,
+        enum osn_dhcp_option opt,
+        const char *val)
+{
+    return true;
+}
 
-    {
-        .name = TARGET_MANAGER_PATH("lm"),
-        .needs_plan_b = false,
-    },
+bool osn_dhcp_client_opt_notify_set(
+        osn_dhcp_client_t *self,
+        osn_dhcp_client_opt_notify_fn_t *fn,
+        void *ctx)
+{
+    return true;
+}
 
-#if !defined(BUILD_DISABLE_BM)
-    {
-        .name = TARGET_MANAGER_PATH("bm"),
-        .needs_plan_b = false,
-    },
-#endif /* !defined(BUILD_DISABLE_BM) */
-};
+bool osn_dhcp_client_opt_request(
+        osn_dhcp_client_t *self,
+        enum osn_dhcp_option opt,
+        bool request)
+{
+    return true;
+}
 
-int target_managers_num = ARRAY_SIZE(target_managers_config);
+bool osn_dhcp_client_opt_get(
+        osn_dhcp_client_t *self,
+        enum osn_dhcp_option opt,
+        bool *request,
+        const char **value)
+{
+    *request = false;
+    *value = NULL;
+    return true;
+}
+
+bool osn_dhcp_client_state_get(
+        osn_dhcp_client_t *self,
+        bool *enabled)
+{
+    return true;
+}

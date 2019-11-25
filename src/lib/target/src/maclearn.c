@@ -25,101 +25,76 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 /*
- * wifihal_maclearn.c
+ * maclearn.c
  *
  * RDKB Platform - Wifi HAL - Mac Learning Table Handling (Wired clients)
  */
 
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
-#include <stdlib.h>
-#include <ctype.h>
 #include <stdbool.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <unistd.h>
-#include <netinet/ether.h>
-#include <ev.h>
 
-#include "os.h"
-#include "os_nif.h"
-#include "evsched.h"
 #include "log.h"
-#include "const.h"
-#include "wifihal.h"
 #include "target.h"
 #include "ds_tree.h"
-
-#ifndef __WIFI_HAL_H__
-#include <ccsp/wifi_hal.h>
-#endif
 
 /*****************************************************************************/
 
 #define MODULE_ID                       LOG_MODULE_ID_HAL
-#define WIFIHAL_MACLEARN_BRIDGE         "br-home"
+#define MACLEARN_BRIDGE                 "br-home"
 
 /*****************************************************************************/
 
-typedef bool (*wifihal_maclearn_cb_t)(
-                struct schema_OVS_MAC_Learning *omac,
-                bool active);
+typedef bool (*maclearn_cb_t)(
+        struct schema_OVS_MAC_Learning *omac,
+        bool active);
 
-static wifihal_maclearn_cb_t    wifihal_maclearn_cb = NULL;
+static maclearn_cb_t    maclearn_cb = NULL;
 
-static c_item_t map_ifname[] = {
-    C_ITEM_STR(WIFIHAL_MACLEARN_TYPE_ETH,           "eth0"),
-    C_ITEM_STR(WIFIHAL_MACLEARN_TYPE_MOCA,          "moca0"),
+static c_item_t map_ifname[] =
+{
+    C_ITEM_STR(MACLEARN_TYPE_ETH,           "eth0"),
+    C_ITEM_STR(MACLEARN_TYPE_MOCA,          "moca0"),
 };
 
 /*****************************************************************************/
 
-bool
-wifihal_maclearn_update(wifihal_maclearn_type_t type, const char *mac, bool connected)
+bool maclearn_update(maclearn_type_t type, const char *mac, bool connected)
 {
     struct schema_OVS_MAC_Learning              omac;
     c_item_t                                    *citem;
 
-    if (!wifihal_maclearn_cb) {
+    if (maclearn_cb == NULL)
+    {
         return false;
     }
 
-    if (!(citem = c_get_item_by_key(map_ifname, type)))
+    citem = c_get_item_by_key(map_ifname, type);
+    if (citem == NULL)
     {
         LOGW("Ignoring MAC Learning update for '%s', unknown type %d", mac, type);
         return false;
     }
 
     memset(&omac, 0, sizeof(omac));
-    strncpy(omac.hwaddr, mac, sizeof(omac.hwaddr)-1);
-    strncpy(omac.brname, WIFIHAL_MACLEARN_BRIDGE, sizeof(omac.brname)-1);
-    strncpy(omac.ifname, c_get_str_by_key(map_ifname, type), sizeof(omac.ifname)-1);
+    STRSCPY(omac.hwaddr, mac);
+    STRSCPY(omac.brname, MACLEARN_BRIDGE);
+    STRSCPY(omac.ifname, c_get_str_by_key(map_ifname, type));
 
     LOGD("Mac Learning: Bridge \"%s\", Interface \"%s\", Client \"%s\" now %sconnected",
          omac.brname, omac.ifname, omac.hwaddr, connected ? "" : "dis");
-    wifihal_maclearn_cb(&omac, connected);
+    maclearn_cb(&omac, connected);
 
     return true;
 }
 
-bool
-wifihal_maclearn_init(void *maclearn_cb)
+bool maclearn_init(void *maclearn_cb)
 {
-    if (wifihal_maclearn_cb) {
+    if (maclearn_cb != NULL)
+    {
         return false;
     }
 
-    wifihal_maclearn_cb = maclearn_cb;
+    maclearn_cb = maclearn_cb;
     LOGN("OVS Mac Learning callback registered");
-
-    return true;
-}
-
-bool
-wifihal_maclearn_cleanup(void)
-{
-    wifihal_maclearn_cb = NULL;
 
     return true;
 }
