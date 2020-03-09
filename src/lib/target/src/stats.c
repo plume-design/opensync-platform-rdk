@@ -416,6 +416,8 @@ bool stats_clients_get(
             continue;
         }
 
+        client_array = NULL;
+        client_num = 0;
         ret = wifi_getApAssociatedDeviceDiagnosticResult2(s, &client_array, &client_num);
         if (ret != RETURN_OK)
         {
@@ -435,7 +437,6 @@ bool stats_clients_get(
         }
 
         free(client_array);
-        client_array = NULL;
     }
 
     return true;

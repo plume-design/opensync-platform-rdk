@@ -69,8 +69,7 @@ bool target_serial_get(void *buff, size_t buffsz)
     if (!target_entity_cache.serial_cached)
     {
         if (!devinfo_getv(DEVINFO_SERIAL_NUM,
-                          ARRAY_AND_SIZE(target_entity_cache.serial),
-                          false))
+                          ARRAY_AND_SIZE(target_entity_cache.serial)))
         {
             return false;
         }
@@ -86,8 +85,7 @@ bool target_id_get(void *buff, size_t buffsz)
     if (!target_entity_cache.id_cached)
     {
         if (!devinfo_getv(DEVINFO_CM_MAC,
-                          ARRAY_AND_SIZE(target_entity_cache.id),
-                          false))
+                          ARRAY_AND_SIZE(target_entity_cache.id)))
         {
             return false;
         }
@@ -136,8 +134,7 @@ bool target_model_get(void *buff, size_t buffsz)
     if (!target_entity_cache.model_cached)
     {
         if (!devinfo_getv(DEVINFO_MODEL_NUM,
-                          ARRAY_AND_SIZE(target_entity_cache.model),
-                          false))
+                          ARRAY_AND_SIZE(target_entity_cache.model)))
         {
             return false;
         }
@@ -165,8 +162,7 @@ bool target_platform_version_get(void *buff, size_t buffsz)
     if (!target_entity_cache.pver_cached)
     {
         if (!devinfo_getv(DEVINFO_SOFTWARE_VER,
-                          ARRAY_AND_SIZE(target_entity_cache.pver),
-                          false))
+                          ARRAY_AND_SIZE(target_entity_cache.pver)))
         {
             return false;
         }

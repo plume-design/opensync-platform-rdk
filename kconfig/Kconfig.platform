@@ -1,0 +1,117 @@
+menuconfig PLATFORM_IS_RDK
+    bool "RDK"
+    help
+        Support for RDK-based platforms
+
+if PLATFORM_IS_RDK
+
+config LAN_BRIDGE_NAME
+    string "LAN bridge name"
+    default "br-home"
+    help
+        LAN bridge name that will be used
+
+config WAN_BRIDGE_NAME
+    string "WAN bridge name"
+    default "br-wan"
+    help
+        WAN bridge name that will be used
+
+config LAN_ETH_IFNAME
+    string "LAN ethernet interface name"
+    default "eth0"
+    help
+        Interface name on which ethernet clients
+        are connected
+
+config MOCA_IFNAME
+    string "MOCA interface name"
+    default "moca0"
+    help
+        MOCA interface name
+
+config RDK_HEALTHCHECK_INTERVAL
+    int "Radio and VIF states healthcheck interval in seconds"
+    default "120"
+    help
+        The interval at which OpenSync will read Radio and VIF
+        information to keep OVSDB state tables up-to-date.
+
+menuconfig DEFAULT_OSYNC_HAL
+    bool "OSync HAL defaults"
+    help
+        Select default OSync HAL implementations.
+
+if DEFAULT_OSYNC_HAL
+
+config OSYNC_HAL_USE_DEFAULT_INIT
+    bool "osync_hal_init()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_READY
+    bool "osync_hal_ready()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_DEINIT
+    bool "osync_hal_deinit()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_FETCH_CONNECTED_CLIENTS
+    bool "osync_hal_fetch_connected_clients()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE
+    bool "osync_hal_devinfo_get_cloud_mode()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR
+    bool "osync_hal_devinfo_get_redirector_addr()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_DHCP_RESYNC_ALL
+    bool "osync_hal_dhcp_resync_all()"
+    default n
+
+if OSYNC_HAL_USE_DEFAULT_DHCP_RESYNC_ALL
+    config OSYNC_HAL_DHCP_LEASES_PATH
+        string "DHCP leases path"
+        default "/tmp/dnsmasq.leases"
+        help
+            DHCP leases path
+endif
+
+config OSYNC_HAL_USE_DEFAULT_INET_GET_IFACE_CONFIG
+    bool "osync_hal_inet_get_iface_config()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_INET_SET_IFACE_CONFIG
+    bool "osync_hal_inet_set_iface_config()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_INET_CREATE_GRE
+    bool "osync_hal_inet_create_gre()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_INET_DESTROY_GRE
+    bool "osync_hal_inet_destroy_gre()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_INET_ADD_TO_BRIDGE
+    bool "osync_hal_inet_add_to_bridge()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_INET_CREATE_VLAN
+    bool "osync_hal_inet_create_vlan()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_INET_DESTROY_VLAN
+    bool "osync_hal_inet_destroy_vlan()"
+    default n
+
+config OSYNC_HAL_USE_DEFAULT_GET_COUNTRY_CODE
+    bool "osync_hal_get_country_code()"
+    default n
+
+endif
+
+endif

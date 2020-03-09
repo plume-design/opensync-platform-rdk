@@ -173,17 +173,6 @@ void* osn_dhcp_server_data_get(osn_dhcp_server_t *self)
 
 bool osn_dhcp_server_apply(osn_dhcp_server_t *self)
 {
-    dhcp_lease_clear(self);
-    if (osync_hal_dhcp_resync_all(dhcp_lease_upsert))
-    {
-        LOGW("Cannot do re-sync of DHCP leases");
-    }
-    else
-    {
-        /* Send out status change notifications */
-        dhcp_server_status_dispatch();
-    }
-
     return true;
 }
 
@@ -284,11 +273,7 @@ static bool dhcp_server_init(osn_dhcp_server_t *self, const char *ifname)
         return false;
     }
 
-    if (!sync_init(SYNC_MGR_NM))
-    {
-        LOGE("Cannot init sync manager for NM");
-        return false;
-    }
+    sync_init(SYNC_MGR_NM, NULL);
 
     /* Initialize this instance */
     memset(self, 0 ,sizeof(*self));

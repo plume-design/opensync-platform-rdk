@@ -30,6 +30,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define WIFI_HAL_STR_LEN  64
 #define BTM_DEFAULT_PREF 1
+#define MAC_STR_LEN       18
 
 #define MAC_ADDR_FMT "%02x:%02x:%02x:%02x:%02x:%02x"
 
@@ -1015,4 +1016,56 @@ int target_bsal_rrm_beacon_report_request(
 
 error:
     return -1;
+}
+
+int target_bsal_client_info(
+        const char *ifname,
+        const uint8_t *mac_addr,
+        bsal_client_info_t *info)
+{
+    wifi_associated_dev3_t  *associated_dev = NULL;
+    UINT                     num_devices = 0;
+    INT                      ret;
+    INT                      apIndex;
+    ULONG                    i;
+    char                     mac[MAC_STR_LEN];
+    os_macaddr_t             macaddr;
+    CHAR                     ifname_temp[BSAL_IFNAME_LEN];
+
+    memset(ifname_temp, 0, sizeof(ifname_temp));
+    // RDK Wifi HAL discards the 'const', so the copy is to avoid warnings
+    STRSCPY(ifname_temp, ifname);
+
+    ret = wifi_getApIndexFromName(ifname_temp, &apIndex);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: Cannot get Ap Index", ifname);
+        return -1;
+    }
+
+    ret = wifi_getApAssociatedDeviceDiagnosticResult3(apIndex, &associated_dev, &num_devices);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: Failed to fetch associated devices", ifname);
+        return -1;
+    }
+    LOGD("%s: Found %u existing associated clients %d", ifname, num_devices, apIndex);
+
+    for (i = 0; i < num_devices; i++)
+    {
+        ret = memcmp(mac_addr, associated_dev[i].cli_MACAddress, BSAL_MAC_ADDR_LEN);
+        if (ret == 0)
+        {
+            memcpy(&macaddr, associated_dev[i].cli_MACAddress, sizeof(macaddr));
+            snprintf(mac, sizeof(mac), PRI(os_macaddr_lower_t), FMT(os_macaddr_t, macaddr));
+            LOGD("%s: Client %s is connected", ifname_temp, mac);
+            info->connected = true;
+            goto exit;
+        }
+    }
+    info->connected = false;
+
+exit:
+    free(associated_dev);
+    return 0;
 }

@@ -39,20 +39,16 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*****************************************************************************/
 
 #define MODULE_ID                       LOG_MODULE_ID_HAL
-#define MACLEARN_BRIDGE                 "br-home"
+#define MACLEARN_BRIDGE                 CONFIG_LAN_BRIDGE_NAME
 
 /*****************************************************************************/
 
-typedef bool (*maclearn_cb_t)(
-        struct schema_OVS_MAC_Learning *omac,
-        bool active);
-
-static maclearn_cb_t    maclearn_cb = NULL;
+static target_mac_learning_cb_t *g_maclearn_cb = NULL;
 
 static c_item_t map_ifname[] =
 {
-    C_ITEM_STR(MACLEARN_TYPE_ETH,           "eth0"),
-    C_ITEM_STR(MACLEARN_TYPE_MOCA,          "moca0"),
+    C_ITEM_STR(MACLEARN_TYPE_ETH,           CONFIG_LAN_ETH_IFNAME),
+    C_ITEM_STR(MACLEARN_TYPE_MOCA,          CONFIG_MOCA_IFNAME),
 };
 
 /*****************************************************************************/
@@ -62,7 +58,7 @@ bool maclearn_update(maclearn_type_t type, const char *mac, bool connected)
     struct schema_OVS_MAC_Learning              omac;
     c_item_t                                    *citem;
 
-    if (maclearn_cb == NULL)
+    if (g_maclearn_cb == NULL)
     {
         return false;
     }
@@ -81,19 +77,14 @@ bool maclearn_update(maclearn_type_t type, const char *mac, bool connected)
 
     LOGD("Mac Learning: Bridge \"%s\", Interface \"%s\", Client \"%s\" now %sconnected",
          omac.brname, omac.ifname, omac.hwaddr, connected ? "" : "dis");
-    maclearn_cb(&omac, connected);
+    g_maclearn_cb(&omac, connected);
 
     return true;
 }
 
-bool maclearn_init(void *maclearn_cb)
+bool target_mac_learning_register(target_mac_learning_cb_t *maclearn_cb)
 {
-    if (maclearn_cb != NULL)
-    {
-        return false;
-    }
-
-    maclearn_cb = maclearn_cb;
+    g_maclearn_cb = maclearn_cb;
     LOGN("OVS Mac Learning callback registered");
 
     return true;

@@ -33,14 +33,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "const.h"
 
 
-#ifdef OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE
 osync_hal_return_t osync_hal_devinfo_get_cloud_mode(osync_hal_devinfo_cloud_mode_t *mode)
 {
     char buf[128];
 
     memset(buf, 0, sizeof(buf));
 
-    if (devinfo_getv(DEVINFO_MESH_STATE, ARRAY_AND_SIZE(buf), false))
+    if (devinfo_getv(DEVINFO_MESH_STATE, ARRAY_AND_SIZE(buf)))
     {
         *mode = OSYNC_HAL_DEVINFO_CLOUD_MODE_MONITOR;
         if (!strncmp(buf, "Full", 4) || !strncmp(buf, "full", 4))
@@ -52,19 +52,19 @@ osync_hal_return_t osync_hal_devinfo_get_cloud_mode(osync_hal_devinfo_cloud_mode
 
     return OSYNC_HAL_FAILURE;
 }
-#endif /* OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE */
 
 
-#ifdef OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR
 osync_hal_return_t osync_hal_devinfo_get_redirector_addr(
         char *buf,
         size_t bufsz)
 {
-    if (!devinfo_getv(DEVINFO_MESH_URL, buf, bufsz, false))
+    if (!devinfo_getv(DEVINFO_MESH_URL, buf, bufsz))
     {
         return OSYNC_HAL_FAILURE;
     }
 
     return OSYNC_HAL_SUCCESS;
 }
-#endif /* OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR */

@@ -29,15 +29,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target.h"
 
 
-#ifdef OSYNC_HAL_USE_DEFAULT_INIT
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_INIT
 osync_hal_return_t osync_hal_init()
 {
     return OSYNC_HAL_SUCCESS;
 }
-#endif /* OSYNC_HAL_USE_DEFAULT_INIT */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_INIT */
 
 
-#ifdef OSYNC_HAL_USE_DEFAULT_READY
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_READY
 osync_hal_return_t osync_hal_ready()
 {
     if (!os_nif_is_interface_ready(BACKHAUL_IFNAME_2G))
@@ -54,12 +54,12 @@ osync_hal_return_t osync_hal_ready()
 
     return OSYNC_HAL_SUCCESS;
 }
-#endif /* OSYNC_HAL_USE_DEFAULT_READY */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_READY */
 
 
-#ifdef OSYNC_HAL_USE_DEFAULT_DEINIT
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_DEINIT
 osync_hal_return_t osync_hal_deinit()
 {
     return OSYNC_HAL_SUCCESS;
 }
-#endif /* OSYNC_HAL_USE_DEFAULT_DEINIT */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_DEINIT */

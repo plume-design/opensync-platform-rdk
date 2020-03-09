@@ -33,6 +33,7 @@ UNIT_SRC += src/clients.c
 UNIT_SRC += src/dhcp.c
 UNIT_SRC += src/inet.c
 UNIT_SRC += src/devinfo.c
+UNIT_SRC += src/radio.c
 
 UNIT_CFLAGS += -I$(UNIT_PATH)/inc
 

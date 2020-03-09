@@ -24,12 +24,11 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <string.h>
-#include <stdbool.h>
-#include <fcntl.h>
-#include <errno.h>
 
+#include "util.h"
 #include "log.h"
 #include "devinfo.h"
 
@@ -37,49 +36,22 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define MODULE_ID LOG_MODULE_ID_OSA
 
-#define DEVINFO_CMD_FMT         "/usr/sbin/deviceinfo.sh -%s"
-#define DEVINFO_CMD_MAX         DEVINFO_MAX_LEN + 32
-
 /*****************************************************************************/
 
-bool
-devinfo_getv(const char *what, char *dest, size_t destsz, bool empty_ok)
+bool devinfo_getv(const char *what, char *dest, size_t destsz)
 {
-    char        cmd[DEVINFO_CMD_MAX];
-    FILE        *f1;
-    int         ret;
+    char *buf;
 
-    if (strlen(what) > DEVINFO_MAX_LEN) {
-        LOGE("devinfo_getv(%s) - Item too long, %d bytes max", what, DEVINFO_MAX_LEN);
+    *dest = '\0';
+
+    buf = strexa("/usr/sbin/deviceinfo.sh", strfmta("-%s", what));
+    if (buf == NULL)
+    {
+        LOGE("devinfo_getv(%s)", strfmta("/usr/sbin/deviceinfo.sh -%s", what));
         return false;
     }
 
-    ret = snprintf(cmd, sizeof(cmd)-1, DEVINFO_CMD_FMT, what);
-    if (ret >= (int)(sizeof(cmd)-1)) {
-        LOGE("devinfo_getv(%s) - Command too long!", what);
-        return false;
-    }
-
-    f1 = popen(cmd, "r");
-    if (!f1) {
-        LOGE("devinfo_getv(%s) - popen failed, errno = %d", what, errno);
-        return false;
-    }
-
-    if (fgets(dest, destsz, f1) == NULL) {
-        LOGE("devinfo_getv(%s) - reading failed, errno = %d", what, errno);
-        pclose(f1);
-        return false;
-    }
-    pclose(f1);
-
-    while (dest[strlen(dest)-1] == '\r' || dest[strlen(dest)-1] == '\n') {
-        dest[strlen(dest)-1] = '\0';
-    }
-
-    if (!empty_ok && strlen(dest) == 0) {
-        return false;
-    }
+    strscpy(dest, buf, destsz);
 
     return true;
 }

@@ -163,7 +163,8 @@ typedef enum
     MACLEARN_TYPE_MOCA,
 } maclearn_type_t;
 
-bool                 maclearn_init(void *maclearn_cb);
+typedef void (*sync_on_connect_cb_t)(void);
+
 bool                 maclearn_update(maclearn_type_t type,
                                     const char *mac,
                                     bool connected);
@@ -172,13 +173,17 @@ bool                 radio_cloud_mode_set(radio_cloud_mode_t mode);
 radio_cloud_mode_t   radio_cloud_mode_get(void);
 bool                 radio_rops_vstate(struct schema_Wifi_VIF_State *vstate);
 void                 radio_trigger_resync(void);
+bool                 radio_ifname_to_idx(const char *ifname, INT *outRadioIndex);
+bool                 radio_rops_vconfig(struct schema_Wifi_VIF_Config *vconf,
+                                        const char *radio_ifname);
 
 void                 clients_connection(INT apIndex,
                                     char *mac, char *key_id);
 void                 clients_disconnection(INT apIndex,
                                     char *mac);
 
-bool                 sync_init(sync_mgr_t mgr);
+void                 sync_init(sync_mgr_t mgr,
+                               sync_on_connect_cb_t sync_cb);
 bool                 sync_cleanup(void);
 bool                 sync_send_ssid_change(INT ssid_index, const char *ssid_ifname,
                                     const char *new_ssid);
@@ -190,11 +195,16 @@ bool                 vif_state_update(INT ssidIndex);
 bool                 vif_state_get(INT ssidIndex, struct schema_Wifi_VIF_State *vstate);
 bool                 vif_copy_to_config(INT ssidIndex, struct schema_Wifi_VIF_State *vstate,
                                         struct schema_Wifi_VIF_Config *vconf);
+bool                 vif_external_ssid_update(const char *ssid, int ssid_index);
+bool                 vif_external_security_update(int ssid_index, const char *passphrase,
+                                        const char *secMode);
+
 struct               target_radio_ops;
 bool                 clients_hal_init(const struct target_radio_ops *rops);
 bool                 clients_hal_fetch_existing(unsigned int apIndex);
 
-void                 target_fatal_restart(bool block, char *reason);
+void                 cloud_config_mode_init(void);
+void                 cloud_config_set_mode(const char *device_mode);
 
 bool                 dhcp_lease_upsert(const osync_hal_dhcp_lease_t *dlip);
 void                 dhcp_lease_clear(osn_dhcp_server_t *self);

@@ -44,6 +44,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define DEVINFO_HOME_IP             "lip"
 #define DEVINFO_HOME_IPv6           "lipv6"
 
-extern bool     devinfo_getv(const char *what, char *dest, size_t destsz, bool empty_ok);
+bool devinfo_getv(const char *what, char *dest, size_t destsz);
 
 #endif /* DEVINFO_H_INCLUDED */

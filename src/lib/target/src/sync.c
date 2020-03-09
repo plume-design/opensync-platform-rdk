@@ -48,10 +48,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "os.h"
 #include "log.h"
 #include "const.h"
-#include "evsched.h"
 #include "target.h"
 #include "osync_hal.h"
 #include "target_internal.h"
+#include "devinfo.h"
 
 #ifndef __WIFI_HAL_H__
 #include <ccsp/wifi_hal.h>
@@ -106,11 +106,13 @@ static c_item_t map_iface_mltype[] =
     C_ITEM_VAL(MESH_IFACE_MOCA,                     MACLEARN_TYPE_MOCA),
 };
 
-
-static sync_mgr_t   sync_mgr;
+static sync_on_connect_cb_t sync_on_connect_cb = NULL;
+static sync_mgr_t           sync_mgr;
 static ev_io                sync_evio;
 static bool                 sync_initialized = false;
 static int                  sync_fd          = -1;
+
+static ev_timer sync_timer;
 
 /*****************************************************************************/
 
@@ -158,9 +160,19 @@ static int wiifhal_sync_iface_mltype(int iface_type)
     return -1;
 }
 
+static void resync_leases()
+{
+    if (osync_hal_dhcp_resync_all(dhcp_lease_upsert) != OSYNC_HAL_SUCCESS)
+    {
+        LOGE("Failed to resync DHCP leases");
+    }
+    dhcp_server_status_dispatch();
+}
+
 static void sync_process_msg(MeshSync *mp)
 {
     radio_cloud_mode_t              cloud_mode;
+    radio_cloud_mode_t              current_cloud_mode;
     INT                             radioIndex;
     INT                             ret;
     char                            radio_ifname[128];
@@ -198,6 +210,11 @@ static void sync_process_msg(MeshSync *mp)
             }
 
             LOGI("... %s changed SSID to '%s'", ssid_ifname, mp->data.wifiSSIDName.ssid);
+
+            if (!vif_external_ssid_update(mp->data.wifiSSIDName.ssid, mp->data.wifiSSIDName.index))
+            {
+                LOGE("Cannot update config table for SSID: %s", mp->data.wifiSSIDName.ssid);
+            }
             break;
 
         case MESH_WIFI_AP_SECURITY:
@@ -214,6 +231,11 @@ static void sync_process_msg(MeshSync *mp)
                     mp->data.wifiAPSecurity.passphrase,
                     mp->data.wifiAPSecurity.secMode,
                     mp->data.wifiAPSecurity.encryptMode);
+            if (!vif_external_security_update(mp->data.wifiSSIDName.index, mp->data.wifiAPSecurity.passphrase,
+                        mp->data.wifiAPSecurity.secMode))
+            {
+                LOGE("Cannot update config table for SSID: %s", mp->data.wifiSSIDName.ssid);
+            }
             break;
 
         case MESH_WIFI_AP_ADD_ACL_DEVICE:
@@ -272,7 +294,7 @@ static void sync_process_msg(MeshSync *mp)
         case MESH_URL_CHANGE:
             BREAK_IF_NOT_MGR(CM);
             LOGI("... Backhaul URL changed to '%s'", mp->data.url.url);
-            target_fatal_restart(false, "Backhaul URL was changed");
+            target_managers_restart();
             break;
 
         case MESH_WIFI_RESET:
@@ -283,7 +305,7 @@ static void sync_process_msg(MeshSync *mp)
         case MESH_SUBNET_CHANGE:
             BREAK_IF_NOT_MGR(NM);
             LOGI("... Subnet change, gwIP '%s', nmask '%s'", mp->data.subnet.gwIP, mp->data.subnet.netmask);
-            target_fatal_restart(false, "User subnet was changed");
+            target_managers_restart();
             break;
 
         case MESH_WIFI_AP_KICK_ALL_ASSOC_DEVICES:
@@ -342,7 +364,7 @@ static void sync_process_msg(MeshSync *mp)
             break;
 
         case MESH_STATE_CHANGE:
-            BREAK_IF_NOT_MGR(WM);
+            BREAK_IF_NOT_MGR(CM);
             LOGI("... Updating cloud mode from mesh state");
             if (mp->data.meshState.state == MESH_STATE_FULL)
             {
@@ -352,6 +374,26 @@ static void sync_process_msg(MeshSync *mp)
             {
                 cloud_mode = RADIO_CLOUD_MODE_MONITOR;
             }
+
+            current_cloud_mode = radio_cloud_mode_get();
+            if (current_cloud_mode == cloud_mode)
+            {
+                break;
+            }
+
+            switch (cloud_mode)
+            {
+                case RADIO_CLOUD_MODE_FULL:
+                    cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_CLOUD);
+                    break;
+                case RADIO_CLOUD_MODE_MONITOR:
+                    cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_MONITOR);
+                    break;
+                default:
+                    LOGW("Failed to set device mode! :: unknown value = %d", cloud_mode);
+                    break;
+            }
+
             if (!radio_cloud_mode_set(cloud_mode))
             {
                 LOGE("Failed to set new cloud mode %d", cloud_mode);
@@ -376,19 +418,43 @@ static void sync_process_msg(MeshSync *mp)
             break;
 
         case MESH_DHCP_RESYNC_LEASES:
-        case MESH_DHCP_UPDATE_LEASE:
-        case MESH_DHCP_ADD_LEASE:
-        case MESH_DHCP_REMOVE_LEASE:
             BREAK_IF_NOT_MGR(NM);
             LOGD("... Resyncing DHCP leases");
 
-            if (osync_hal_dhcp_resync_all(dhcp_lease_upsert) != OSYNC_HAL_SUCCESS)
-            {
-                LOGE("Failed to resync DHCP leases");
-            }
-             /* Send out status change notifications */
-            dhcp_server_status_dispatch();
+            resync_leases();
+            break;
 
+        case MESH_DHCP_UPDATE_LEASE:
+            BREAK_IF_NOT_MGR(NM);
+            LOGD("... Update DHCP lease: mac=\"%s\", ipaddr=\"%s\", hn=\"%s\", fp=\"%s\"",
+                    mp->data.meshLease.mac,
+                    mp->data.meshLease.ipaddr,
+                    mp->data.meshLease.hostname,
+                    mp->data.meshLease.fingerprint);
+
+            resync_leases();
+            break;
+
+        case MESH_DHCP_ADD_LEASE:
+            BREAK_IF_NOT_MGR(NM);
+            LOGD("... Add DHCP lease: mac=\"%s\", ipaddr=\"%s\", hn=\"%s\", fp=\"%s\"",
+                    mp->data.meshLease.mac,
+                    mp->data.meshLease.ipaddr,
+                    mp->data.meshLease.hostname,
+                    mp->data.meshLease.fingerprint);
+
+            resync_leases();
+            break;
+
+        case MESH_DHCP_REMOVE_LEASE:
+            BREAK_IF_NOT_MGR(NM);
+            LOGD("... Remove DHCP lease: mac=\"%s\", ipaddr=\"%s\", hn=\"%s\", fp=\"%s\"",
+                    mp->data.meshLease.mac,
+                    mp->data.meshLease.ipaddr,
+                    mp->data.meshLease.hostname,
+                    mp->data.meshLease.fingerprint);
+
+            resync_leases();
             break;
 
         default:
@@ -474,14 +540,12 @@ static bool sync_send_msg(MeshSync *mp)
     return true;
 }
 
-static void sync_task_connect(void *arg)
+static void sync_task_connect(struct ev_loop *loop, ev_timer *timer_ptr, int revents)
 {
     struct sockaddr_un  addr;
     const char          *uds_path = MESH_SOCKET_PATH_NAME;
     int                 ret;
     int                 fd;
-
-    (void)arg;
 
     // Setup address of socket
     memset(&addr, 0, sizeof(addr));
@@ -504,7 +568,6 @@ static void sync_task_connect(void *arg)
     if (fd < 0)
     {
         LOGE("Sync client failed to connect -- socket creation failure, errno = %d", errno);
-        evsched_task_reschedule_ms(EVSCHED_SEC(SYNC_RETRY));
         return;
     }
 
@@ -514,7 +577,6 @@ static void sync_task_connect(void *arg)
     {
         LOGE("Sync client failed to connect, errno = %d", errno);
         close(fd);
-        evsched_task_reschedule_ms(EVSCHED_SEC(SYNC_RETRY));
         return;
     }
 
@@ -525,13 +587,20 @@ static void sync_task_connect(void *arg)
     LOGI("Sync client connected to Mesh-Agent (fd %d)", fd);
     sync_fd = fd;
 
+    if (sync_on_connect_cb)
+    {
+        sync_on_connect_cb();
+    }
+
+    ev_timer_stop(loop, timer_ptr);
+
     return;
 }
 
 static void sync_disconnect(void)
 {
     // Cancel any connection tasks
-    evsched_task_cancel_by_find(&sync_task_connect, NULL, EVSCHED_FIND_BY_FUNC);
+    ev_timer_stop(EV_DEFAULT_ &sync_timer);
 
     // Nothing else to do if not connected
     if (sync_fd < 0)
@@ -554,19 +623,21 @@ static void sync_reconnect(void)
     sync_disconnect();
 
     // Schedule task to connect
-    evsched_task(&sync_task_connect, NULL, EVSCHED_SEC(SYNC_RETRY));
+    ev_timer_init(&sync_timer, sync_task_connect, 0, SYNC_RETRY);
+    ev_timer_again(EV_DEFAULT_ &sync_timer);
 
     return;
 }
 
 /*****************************************************************************/
 
-bool sync_init(sync_mgr_t mgr)
+void sync_init(sync_mgr_t mgr, sync_on_connect_cb_t sync_cb)
 {
     if (sync_initialized)
     {
-        return true;
+        return;
     }
+    sync_on_connect_cb = sync_cb;
 
     // Kick of connect task
     sync_reconnect();
@@ -574,8 +645,6 @@ bool sync_init(sync_mgr_t mgr)
     LOGN("Sync client initialized");
     sync_initialized = true;
     sync_mgr = mgr;
-
-    return true;
 }
 
 bool sync_cleanup(void)
@@ -681,7 +750,6 @@ bool sync_send_status(radio_cloud_mode_t mode)
         mmsg.data.wifiStatus.status = MESH_WIFI_STATUS_FULL;
         break;
     }
-
     if (!sync_send_msg(&mmsg))
     {
         // It reports error

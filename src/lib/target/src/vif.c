@@ -137,17 +137,6 @@ static bool acl_to_state(
     INT                     acl_mode;
     INT                     status = RETURN_ERR;
     INT                     i;
-    char                    *unmapped_ifname = target_unmap_ifname(ssid_ifname);
-
-    // Band steering uses the ACL on home interfaces, so ignore it
-    // for now and report none to the cloud
-    if (!strncmp(unmapped_ifname, "home-ap-", 8))
-    {
-        STRSCPY(vstate->mac_list_type,
-                c_get_str_by_key(map_acl_modes, WEXT_ACL_MODE_DISABLE));
-        vstate->mac_list_len = 0;
-        return true;
-    }
 
     status = wifi_getApMacAddressControlMode(ssid_index, &acl_mode);
     if (status != RETURN_OK)
@@ -280,6 +269,104 @@ static const char* security_conf_find_by_key(
     return NULL;
 }
 
+static int set_security_key_value(
+        struct schema_Wifi_VIF_State *vstate,
+        int index,
+        const char *key,
+        const char *value)
+{
+    STRSCPY(vstate->security_keys[index], key);
+    STRSCPY(vstate->security[index], value);
+
+    index += 1;
+    vstate->security_len = index;
+
+    return index;
+}
+
+static bool set_personal_credentials(
+        struct schema_Wifi_VIF_State *vstate,
+        int index,
+        INT ssid_index)
+{
+    INT ret;
+    CHAR buf[WIFIHAL_MAX_BUFFER];
+
+    memset(buf, 0, sizeof(buf));
+    ret = wifi_getApSecurityKeyPassphrase(ssid_index, buf);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: Failed to retrieve security passphrase", vstate->if_name);
+        return false;
+    }
+
+    if (strlen(buf) == 0)
+    {
+        LOGW("%s: wifi_getApSecurityKeyPassphrase returned empty SSID string", vstate->if_name);
+    }
+
+    set_security_key_value(vstate, index, OVSDB_SECURITY_KEY, buf);
+
+    // TODO: We temporary removed multi-psk support from generic RDK platform.
+    // The multi-psk support will be added back when proper
+    // Wifi HAL API is created. We don't support direct hostapd-based
+    // multi-psk (it should be handled within the vendor layer).
+
+    return true;
+}
+
+static bool set_enterprise_credentials(
+        struct schema_Wifi_VIF_State *vstate,
+        int index,
+        INT ssid_index)
+{
+    INT ret;
+    CHAR radius_ip[WIFIHAL_MAX_BUFFER];
+    CHAR radius_secret[WIFIHAL_MAX_BUFFER];
+    CHAR radius_port_str[WIFIHAL_MAX_BUFFER];
+    UINT radius_port;
+
+    memset(radius_ip, 0, sizeof(radius_ip));
+    memset(radius_secret, 0, sizeof(radius_secret));
+    ret = wifi_getApSecurityRadiusServer(ssid_index, radius_ip, &radius_port, radius_secret);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: Failed to retrieve radius settings", vstate->if_name);
+        return false;
+    }
+
+    index = set_security_key_value(vstate, index, OVSDB_SECURITY_RADIUS_SERVER_IP, radius_ip);
+
+    memset(radius_port_str, 0, sizeof(radius_port_str));
+    snprintf(radius_port_str, sizeof(radius_port_str), "%u", radius_port);
+    index = set_security_key_value(vstate, index, OVSDB_SECURITY_RADIUS_SERVER_PORT, radius_port_str);
+
+    set_security_key_value(vstate, index, OVSDB_SECURITY_RADIUS_SERVER_SECRET, radius_secret);
+
+    return true;
+}
+
+static bool set_enc_mode(
+        struct schema_Wifi_VIF_State *vstate,
+        INT ssid_index,
+        const char *encryption,
+        const char *mode,
+        bool enterprise)
+{
+    int index = 0;
+
+    index = set_security_key_value(vstate, index, OVSDB_SECURITY_ENCRYPTION, encryption);
+
+    index = set_security_key_value(vstate, index, OVSDB_SECURITY_MODE, mode);
+
+    if (enterprise)
+    {
+        return set_enterprise_credentials(vstate, index, ssid_index);
+    }
+
+    return set_personal_credentials(vstate, index, ssid_index);
+}
+
 static bool security_to_state(
         INT ssid_index,
         char *ssid_ifname,
@@ -288,13 +375,9 @@ static bool security_to_state(
     sec_type_t              stype;
     c_item_t                *citem;
     CHAR                    buf[WIFIHAL_MAX_BUFFER];
-    CHAR                    radius_ip[WIFIHAL_MAX_BUFFER];
-    CHAR                    radius_secret[WIFIHAL_MAX_BUFFER];
-    UINT                    radius_port;
-    int                     n = 0;
     INT                     ret;
 
-    // security, security_keys, security_len
+    memset(buf, 0, sizeof(buf));
     ret = wifi_getApSecurityModeEnabled(ssid_index, buf);
     if (ret != RETURN_OK)
     {
@@ -309,144 +392,41 @@ static bool security_to_state(
     }
     stype = (sec_type_t)citem->key;
 
-    // map: encryption
-    STRSCPY(vstate->security_keys[n], OVSDB_SECURITY_ENCRYPTION);
     switch (stype)
     {
         case SEC_NONE:
-            STRSCPY(vstate->security[n], OVSDB_SECURITY_ENCRYPTION_OPEN);
-            break;
+            set_security_key_value(vstate, 0, OVSDB_SECURITY_ENCRYPTION, OVSDB_SECURITY_ENCRYPTION_OPEN);
+            return true;
 
         case SEC_WEP_64:
+            return set_enc_mode(vstate, ssid_index, OVSDB_SECURITY_ENCRYPTION_WEP, OVSDB_SECURITY_MODE_WEP64, false);
+
         case SEC_WEP_128:
-            STRSCPY(vstate->security[n], OVSDB_SECURITY_ENCRYPTION_WEP);
-            break;
+            return set_enc_mode(vstate, ssid_index, OVSDB_SECURITY_ENCRYPTION_WEP, OVSDB_SECURITY_MODE_WEP128, false);
 
         case SEC_WPA_PERSONAL:
+            return set_enc_mode(vstate, ssid_index, OVSDB_SECURITY_ENCRYPTION_WPA_PSK, OVSDB_SECURITY_MODE_WPA1, false);
+
         case SEC_WPA2_PERSONAL:
+            return set_enc_mode(vstate, ssid_index, OVSDB_SECURITY_ENCRYPTION_WPA_PSK, OVSDB_SECURITY_MODE_WPA2, false);
+
         case SEC_WPA_WPA2_PERSONAL:
-            STRSCPY(vstate->security[n], OVSDB_SECURITY_ENCRYPTION_WPA_PSK);
-            break;
+            return set_enc_mode(vstate, ssid_index, OVSDB_SECURITY_ENCRYPTION_WPA_PSK, OVSDB_SECURITY_MODE_MIXED, false);
 
         case SEC_WPA_ENTERPRISE:
+            return set_enc_mode(vstate, ssid_index, OVSDB_SECURITY_ENCRYPTION_WPA_EAP, OVSDB_SECURITY_MODE_WPA1, true);
+
         case SEC_WPA2_ENTERPRISE:
+            return set_enc_mode(vstate, ssid_index, OVSDB_SECURITY_ENCRYPTION_WPA_EAP, OVSDB_SECURITY_MODE_WPA2, true);
+
         case SEC_WPA_WPA2_ENTERPRISE:
-            STRSCPY(vstate->security[n], OVSDB_SECURITY_ENCRYPTION_WPA_EAP);
-            break;
+            return set_enc_mode(vstate, ssid_index, OVSDB_SECURITY_ENCRYPTION_WPA_EAP, OVSDB_SECURITY_MODE_MIXED, true);
 
         default:
             LOGE("%s: Unsupported security type (%d = %s)", ssid_ifname, stype, buf);
             return false;
     }
-    n++;
 
-    if (stype == SEC_NONE)
-    {
-        vstate->security_len = n;
-        return true;
-    }
-
-    // map: mode
-    STRSCPY(vstate->security_keys[n], OVSDB_SECURITY_MODE);
-    switch (stype)
-    {
-        case SEC_WEP_64:
-            STRSCPY(vstate->security[n], OVSDB_SECURITY_MODE_WEP64);
-            break;
-
-        case SEC_WEP_128:
-            STRSCPY(vstate->security[n], OVSDB_SECURITY_MODE_WEP128);
-            break;
-
-        case SEC_WPA_PERSONAL:
-        case SEC_WPA_ENTERPRISE:
-            STRSCPY(vstate->security[n], OVSDB_SECURITY_MODE_WPA1);
-            break;
-
-        case SEC_WPA2_PERSONAL:
-        case SEC_WPA2_ENTERPRISE:
-            STRSCPY(vstate->security[n], OVSDB_SECURITY_MODE_WPA2);
-            break;
-
-        case SEC_WPA_WPA2_PERSONAL:
-        case SEC_WPA_WPA2_ENTERPRISE:
-            STRSCPY(vstate->security[n], OVSDB_SECURITY_MODE_MIXED);
-            break;
-
-        default:
-            LOGE("%s: Unsupported security mode (stype %d = %s)", ssid_ifname, stype, buf);
-            return false;
-    }
-    n++;
-
-    switch (stype)
-    {
-        case SEC_WEP_64:
-        case SEC_WEP_128:
-        case SEC_WPA_PERSONAL:
-        case SEC_WPA2_PERSONAL:
-        case SEC_WPA_WPA2_PERSONAL:
-            ret = wifi_getApSecurityKeyPassphrase(ssid_index, buf);
-            if (strlen(buf) == 0)
-            {
-                // Try once again!!
-                ret = wifi_getApSecurityKeyPassphrase(ssid_index, buf);
-                if (strlen(buf) == 0)
-                {
-                    ret = RETURN_ERR;
-                    LOGW("%s: wifi_getApSecurityKeyPassphrase returned empty SSID string", ssid_ifname);
-                }
-            }
-            if (ret != RETURN_OK)
-            {
-                LOGE("%s: Failed to retrieve security passphrase", ssid_ifname);
-                return false;
-            }
-
-            // map: key
-            STRSCPY(vstate->security_keys[n], OVSDB_SECURITY_KEY);
-            STRSCPY(vstate->security[n], buf);
-            n++;
-
-            // TODO: We temporary removed multi-psk support from generic RDK platform.
-            // The multi-psk support will be added back when proper
-            // Wifi HAL API is created. We don't support direct hostapd-based
-            // multi-psk (it should be handled within the vendor layer).
-
-            break;
-
-        case SEC_WPA_ENTERPRISE:
-        case SEC_WPA2_ENTERPRISE:
-        case SEC_WPA_WPA2_ENTERPRISE:
-            ret = wifi_getApSecurityRadiusServer(ssid_index, radius_ip, &radius_port, radius_secret);
-            if (ret != RETURN_OK)
-            {
-                LOGE("%s: Failed to retrieve radius settings", ssid_ifname);
-                return false;
-            }
-
-            // map: radius_server_ip
-            STRSCPY(vstate->security_keys[n], OVSDB_SECURITY_RADIUS_SERVER_IP);
-            STRSCPY(vstate->security[n], radius_ip);
-            n++;
-
-            // map: radius_server_port
-            STRSCPY(vstate->security_keys[n], OVSDB_SECURITY_RADIUS_SERVER_PORT);
-            snprintf(vstate->security[n], sizeof(vstate->security[n]), "%u", radius_port);
-            n++;
-
-            // map: radius_server_secret
-            STRSCPY(vstate->security_keys[n], OVSDB_SECURITY_RADIUS_SERVER_SECRET);
-            STRSCPY(vstate->security[n], radius_secret);
-            n++;
-            break;
-
-        default:
-            LOGE("%s: Unsupported security key (stype %d = %s)", ssid_ifname, stype, buf);
-            return false;
-    }
-
-    vstate->security_len = n;
     return true;
 }
 
@@ -463,10 +443,10 @@ static bool security_to_syncmsg(
     if (val == NULL)
     {
         LOGW("%s: Security-to-MSGQ failed -- No encryption type", vconf->if_name);
-        LOGW("%s: Dumping %d security elements:", vconf->if_name, vconf->security_len);
+        LOGT("%s: Dumping %d security elements:", vconf->if_name, vconf->security_len);
         for (i = 0; i < vconf->security_len; i++)
         {
-            LOGW("%s: ... \"%s\" = \"%s\"",
+            LOGT("%s: ... \"%s\" = \"%s\"",
                  vconf->if_name,
                  vconf->security_keys[i],
                  vconf->security[i]);
@@ -541,6 +521,179 @@ static bool vif_is_enabled(INT ssid_index)
     }
 
     return enabled;
+}
+
+bool vif_external_ssid_update(const char *ssid, int ssid_index)
+{
+    INT ret;
+    int radio_idx;
+    char radio_ifname[128];
+    char ssid_ifname[128];
+    struct schema_Wifi_VIF_Config vconf;
+
+    memset(&vconf, 0, sizeof(vconf));
+    vconf._partial_update = true;
+
+    memset(ssid_ifname, 0, sizeof(ssid_ifname));
+    ret = wifi_getApName(ssid_index, ssid_ifname);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: cannot get ap name for index %d", __func__, ssid_index);
+        return false;
+    }
+
+    if (!target_unmap_ifname_exists(ssid_ifname))
+    {
+        LOGD("%s in not in map - ignoring", ssid_ifname);
+        return true;
+    }
+
+    ret = wifi_getSSIDRadioIndex(ssid_index, &radio_idx);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: cannot get radio idx for SSID %s\n", __func__, ssid);
+        return false;
+    }
+
+    memset(radio_ifname, 0, sizeof(radio_ifname));
+    ret = wifi_getRadioIfName(radio_idx, radio_ifname);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: cannot get radio ifname for idx %d", __func__,
+                radio_idx);
+        return false;
+    }
+
+    SCHEMA_SET_STR(vconf.if_name, target_unmap_ifname(ssid_ifname));
+    SCHEMA_SET_STR(vconf.ssid, ssid);
+
+    radio_rops_vconfig(&vconf, radio_ifname);
+
+    return true;
+}
+
+bool vif_external_security_update(
+        int ssid_index,
+        const char *passphrase,
+        const char *secMode)
+{
+    INT ret;
+    int radio_idx;
+    char radio_ifname[128];
+    char ssid_ifname[128];
+    struct schema_Wifi_VIF_Config vconf;
+    sec_type_t stype;
+    c_item_t *citem;
+    const char *enc;
+    const char *mode;
+
+    memset(&vconf, 0, sizeof(vconf));
+    vconf._partial_update = true;
+
+    memset(ssid_ifname, 0, sizeof(ssid_ifname));
+    ret = wifi_getApName(ssid_index, ssid_ifname);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: cannot get ap name for index %d", __func__, ssid_index);
+        return false;
+    }
+
+    if (!target_unmap_ifname_exists(ssid_ifname))
+    {
+        LOGD("%s in not in map - ignoring", ssid_ifname);
+        return true;
+    }
+
+    ret = wifi_getSSIDRadioIndex(ssid_index, &radio_idx);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: cannot get radio idx for SSID %s", __func__, ssid_ifname);
+        return false;
+    }
+
+    memset(radio_ifname, 0, sizeof(radio_ifname));
+    ret = wifi_getRadioIfName(radio_idx, radio_ifname);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: cannot get radio ifname for idx %d", __func__,
+                radio_idx);
+        return false;
+    }
+
+    if (!(citem = c_get_item_by_str(map_security, secMode)))
+    {
+        LOGE("%s: Failed to decode security mode (%s)", ssid_ifname, secMode);
+        return false;
+    }
+    stype = (sec_type_t)citem->key;
+
+    switch (stype)
+    {
+        case SEC_NONE:
+            enc = OVSDB_SECURITY_ENCRYPTION;
+            mode = OVSDB_SECURITY_ENCRYPTION_OPEN;
+            break;
+
+        case SEC_WEP_64:
+            enc = OVSDB_SECURITY_ENCRYPTION_WEP;
+            mode = OVSDB_SECURITY_MODE_WEP64;
+            break;
+
+        case SEC_WEP_128:
+            enc = OVSDB_SECURITY_ENCRYPTION_WEP;
+            mode = OVSDB_SECURITY_MODE_WEP128;
+            break;
+
+        case SEC_WPA_PERSONAL:
+            enc = OVSDB_SECURITY_ENCRYPTION_WPA_PSK;
+            mode = OVSDB_SECURITY_MODE_WPA1;
+            break;
+
+        case SEC_WPA2_PERSONAL:
+            enc = OVSDB_SECURITY_ENCRYPTION_WPA_PSK;
+            mode = OVSDB_SECURITY_MODE_WPA2;
+            break;
+
+        case SEC_WPA_WPA2_PERSONAL:
+            enc = OVSDB_SECURITY_ENCRYPTION_WPA_PSK;
+            mode = OVSDB_SECURITY_MODE_MIXED;
+            break;
+
+        case SEC_WPA_ENTERPRISE:
+            enc = OVSDB_SECURITY_ENCRYPTION_WPA_EAP;
+            mode = OVSDB_SECURITY_MODE_WPA1;
+            break;
+
+        case SEC_WPA2_ENTERPRISE:
+            enc = OVSDB_SECURITY_ENCRYPTION_WPA_EAP;
+            mode = OVSDB_SECURITY_MODE_WPA2;
+            break;
+
+        case SEC_WPA_WPA2_ENTERPRISE:
+            enc = OVSDB_SECURITY_ENCRYPTION_WPA_EAP;
+            mode = OVSDB_SECURITY_MODE_MIXED;
+            break;
+
+        default:
+            LOGE("%s: Unsupported security type (%d = %s)", ssid_ifname, stype, secMode);
+            return false;
+    }
+
+    STRSCPY(vconf.security_keys[0], OVSDB_SECURITY_ENCRYPTION);
+    STRSCPY(vconf.security[0], enc);
+    STRSCPY(vconf.security_keys[1], OVSDB_SECURITY_KEY);
+    STRSCPY(vconf.security[1], passphrase);
+    STRSCPY(vconf.security_keys[2], OVSDB_SECURITY_MODE);
+    STRSCPY(vconf.security[2], mode);
+    vconf.security_len = 3;
+    vconf.security_present = true;
+
+    SCHEMA_SET_STR(vconf.if_name, target_unmap_ifname(ssid_ifname));
+
+    LOGD("Updating VIF for new security");
+    radio_rops_vconfig(&vconf, radio_ifname);
+
+    return true;
 }
 
 bool vif_copy_to_config(
@@ -876,6 +1029,23 @@ static bool vif_ifname_to_idx(const char *ifname, INT *outSsidIndex)
     return true;
 }
 
+/* Returns true if any of the fields that need explicit applying changed */
+static bool should_apply(const struct schema_Wifi_VIF_Config_flags *changed)
+{
+    return (   changed->if_name
+            || changed->enabled
+            || changed->mode
+            || changed->ssid_broadcast
+            || changed->security
+            || changed->mac_list
+            || changed->mac_list_type
+            || changed->vlan_id
+            || changed->ap_bridge
+            || changed->rrm
+            || changed->btm
+           );
+}
+
 bool target_vif_config_set2(
         const struct schema_Wifi_VIF_Config *vconf,
         const struct schema_Wifi_Radio_Config *rconf,
@@ -1056,6 +1226,14 @@ bool target_vif_config_set2(
         if (wifi_setBSSTransitionActivation(ssid_index, vconf->btm) != RETURN_OK)
         {
             LOGW("%s: Failed to change btm to %d", ssid_ifname, vconf->btm);
+        }
+    }
+
+    if (should_apply(changed))
+    {
+        if (wifi_applySSIDSettings(ssid_index) != RETURN_OK)
+        {
+            LOGW("%s: Failed to apply SSID settings", ssid_ifname);
         }
     }
 

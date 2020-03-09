@@ -40,53 +40,64 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "devinfo.h"
 
 
-#ifdef OSYNC_HAL_USE_DEFAULT_INET_GET_IFACE_CONFIG
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_INET_GET_IFACE_CONFIG
+
+#define DEVINFO_CACHED_SIZE 64
+
 osync_hal_return_t osync_hal_inet_get_iface_config(
         const char *if_name,
         osync_hal_inet_iface_config_t *config)
 {
-    char dbuf[256];
-    char *devinfo_ip = NULL;
-    char *devinfo_mac = NULL;
+    static char home_ip_cached[DEVINFO_CACHED_SIZE];
+    static char home_mac_cached[DEVINFO_CACHED_SIZE];
+    static char wan_ip_cached[DEVINFO_CACHED_SIZE];
+    static char wan_mac_cached[DEVINFO_CACHED_SIZE];
 
-    if (!strcmp(if_name, "br-home"))
+    static bool once = true;
+
+    /*
+     * On RDK we only handle interfaces accessed via deviceinfo.sh.
+     * Other interfaces are handled directly by NM via standard Linux
+     * networking tools.
+     * Calls to deviceinfo.sh may take significant amount of time,
+     * so we cache ip and mac for optimization purposes.
+     * We also assume the WAN IP and MAC will not be changed without
+     * restarting OpenSync.
+     */
+    if (once)
     {
-        devinfo_ip = DEVINFO_HOME_IP;
-        devinfo_mac = DEVINFO_HOME_MAC;
+        devinfo_getv(DEVINFO_HOME_IP,  home_ip_cached,  sizeof(home_ip_cached));
+        devinfo_getv(DEVINFO_HOME_MAC, home_mac_cached, sizeof(home_mac_cached));
+        devinfo_getv(DEVINFO_WAN_IP,   wan_ip_cached,   sizeof(wan_ip_cached));
+        devinfo_getv(DEVINFO_WAN_MAC,  wan_mac_cached,  sizeof(wan_mac_cached));
+
+        once = false;
     }
-    else if (!strcmp(if_name, "br-wan"))
+
+    if (!strcmp(if_name, CONFIG_LAN_BRIDGE_NAME))
     {
-        devinfo_ip = DEVINFO_WAN_IP;
-        devinfo_mac = DEVINFO_WAN_MAC;
+        STRSCPY(config->inet_addr, home_ip_cached);
+        STRSCPY(config->mac_str, home_mac_cached);
+    }
+    else if (!strcmp(if_name, CONFIG_WAN_BRIDGE_NAME))
+    {
+        STRSCPY(config->inet_addr, wan_ip_cached);
+        STRSCPY(config->mac_str, wan_mac_cached);
     }
     else
     {
-        LOGE("Cannot get config for %s. Only br-home and br-wan interfaces available", if_name);
+        LOGE("Cannot get config for %s. Only %s and %s interfaces available", if_name,
+                CONFIG_LAN_BRIDGE_NAME, CONFIG_WAN_BRIDGE_NAME);
         return OSYNC_HAL_FAILURE;
     }
 
-    memset(dbuf, 0, sizeof(dbuf));
-    if (!devinfo_getv(devinfo_ip, dbuf, sizeof(dbuf), false))
-    {
-        LOGE("cannot read IP for %s", if_name);
-        return OSYNC_HAL_FAILURE;
-    }
-    STRSCPY(config->inet_addr, dbuf);
-
-    memset(dbuf, 0, sizeof(dbuf));
-    if (!devinfo_getv(devinfo_mac, dbuf, sizeof(dbuf), false))
-    {
-        LOGE("cannot read MAC for %s", if_name);
-        return OSYNC_HAL_FAILURE;
-    }
-    STRSCPY(config->mac_str, dbuf);
 
     return OSYNC_HAL_SUCCESS;
 }
-#endif /* OSYNC_HAL_USE_DEFAULT_INET_GET_IFACE_CONFIG */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_INET_GET_IFACE_CONFIG */
 
 
-#ifdef OSYNC_HAL_USE_DEFAULT_INET_SET_IFACE_CONFIG
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_INET_SET_IFACE_CONFIG
 osync_hal_return_t osync_hal_inet_set_iface_config(
         const char *if_name,
         const osync_hal_inet_iface_config_t *config)
@@ -232,10 +243,10 @@ out:
     close(inet_ioctl_socket);
     return ret;
 }
-#endif /* OSYNC_HAL_USE_DEFAULT_INET_SET_IFACE_CONFIG */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_INET_SET_IFACE_CONFIG */
 
 
-#ifdef OSYNC_HAL_USE_DEFAULT_INET_CREATE_GRE
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_INET_CREATE_GRE
 osync_hal_return_t osync_hal_inet_create_gre(
         const char *if_name,
         const char *local,
@@ -273,10 +284,10 @@ osync_hal_return_t osync_hal_inet_create_gre(
 
     return OSYNC_HAL_SUCCESS;
 }
-#endif /* OSYNC_HAL_USE_DEFAULT_INET_CREATE_GRE */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_INET_CREATE_GRE */
 
 
-#ifdef OSYNC_HAL_USE_DEFAULT_INET_DESTROY_GRE
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_INET_DESTROY_GRE
 osync_hal_return_t osync_hal_inet_destroy_gre(const char *if_name)
 {
     char cmd[256];
@@ -291,10 +302,10 @@ osync_hal_return_t osync_hal_inet_destroy_gre(const char *if_name)
 
     return OSYNC_HAL_SUCCESS;
 }
-#endif /* OSYNC_HAL_USE_DEFAULT_INET_DESTROY_GRE */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_INET_DESTROY_GRE */
 
 
-#ifdef OSYNC_HAL_USE_DEFAULT_INET_ADD_TO_BRIDGE
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_INET_ADD_TO_BRIDGE
 osync_hal_return_t osync_hal_inet_add_to_bridge(
         const char *if_name,
         const char *br_name)
@@ -316,10 +327,10 @@ osync_hal_return_t osync_hal_inet_add_to_bridge(
 
     return OSYNC_HAL_SUCCESS;
 }
-#endif /* OSYNC_HAL_USE_DEFAULT_INET_ADD_TO_BRIDGE */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_INET_ADD_TO_BRIDGE */
 
 
-#ifdef OSYNC_HAL_USE_DEFAULT_INET_CREATE_VLAN
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_INET_CREATE_VLAN
 osync_hal_return_t osync_hal_inet_create_vlan(
         const char *if_name,
         unsigned int vlan_id)
@@ -351,4 +362,27 @@ osync_hal_return_t osync_hal_inet_create_vlan(
 
     return OSYNC_HAL_SUCCESS;
 }
-#endif /* OSYNC_HAL_USE_DEFAULT_INET_CREATE_VLAN */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_INET_CREATE_VLAN */
+
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_INET_DESTROY_VLAN
+osync_hal_return_t osync_hal_inet_destroy_vlan(const char *if_name)
+{
+    char cmd[256];
+    int rc;
+
+    memset(cmd, 0, sizeof(cmd));
+
+    // XXX: Remove interface first
+    snprintf(cmd, sizeof(cmd), "vconfig rem %s > /dev/null 2>&1", if_name);
+    LOGD("%s: Destroying with \"%s\"", if_name, cmd);
+    rc = system(cmd);
+    if (!WIFEXITED(rc) || WEXITSTATUS(rc) != 0)
+    {
+        LOGE("%s: Failed to destroy VLAN interface \"%s\", rc = %d",
+                if_name, cmd, WEXITSTATUS(rc));
+        return OSYNC_HAL_FAILURE;
+    }
+
+    return OSYNC_HAL_SUCCESS;
+}
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_INET_DESTROY_VLAN */

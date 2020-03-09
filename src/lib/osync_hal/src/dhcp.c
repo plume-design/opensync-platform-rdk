@@ -36,10 +36,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "const.h"
 #include "osync_hal.h"
 
-#define DHCP_LEASE_PATH "/tmp/dnsmasq.leases"
-
-
-#ifdef OSYNC_HAL_USE_DEFAULT_DHCP_RESYNC_ALL
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_DHCP_RESYNC_ALL
 typedef enum
 {
     DNSMASQ_LEASE_HWADDR = 1,
@@ -49,24 +46,24 @@ typedef enum
     // Indicate irrelevant columns
     DNSMASQ_LEASE_IGNORE
 } dnsmasq_lease_col_t;
-#endif /* OSYNC_HAL_USE_DEFAULT_DHCP_RESYNC_ALL */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_DHCP_RESYNC_ALL */
 
 
 /**
  * Parse the the DHCP lease list from the dhcp.leases file and update the current list
  * Can be called from Mesh Agent.
  */
-#ifdef OSYNC_HAL_USE_DEFAULT_DHCP_RESYNC_ALL
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_DHCP_RESYNC_ALL
 osync_hal_return_t osync_hal_dhcp_resync_all(osync_hal_dhcp_lease_fn dhcp_lease_fn)
 {
     char buf[1024];
     osync_hal_dhcp_lease_t dlip;
     FILE *f = NULL;
 
-    f = fopen(DHCP_LEASE_PATH, "rt");
+    f = fopen(CONFIG_OSYNC_HAL_DHCP_LEASES_PATH, "rt");
     if (f == NULL)
     {
-        LOGE("DHCP: Failed to open %s", DHCP_LEASE_PATH);
+        LOGE("DHCP: Failed to open %s", CONFIG_OSYNC_HAL_DHCP_LEASES_PATH);
         return OSYNC_HAL_FAILURE;
     }
 
@@ -142,4 +139,4 @@ osync_hal_return_t osync_hal_dhcp_resync_all(osync_hal_dhcp_lease_fn dhcp_lease_
 
     return OSYNC_HAL_SUCCESS;
 }
-#endif /* OSYNC_HAL_USE_DEFAULT_DHCP_RESYNC_ALL */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_DHCP_RESYNC_ALL */

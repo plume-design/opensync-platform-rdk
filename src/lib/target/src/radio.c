@@ -47,7 +47,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define CSA_TBTT                        25
 #define RESYNC_UPDATE_DELAY_SECONDS     5
-#define HEALTHCHECK_PERIOD_SECONDS      30
 
 /*****************************************************************************/
 
@@ -66,13 +65,6 @@ static c_item_t map_htmode_str[] =
     C_ITEM_STR_STR("80+80",                     "HT80+80"),
     C_ITEM_STR_STR("160MHz",                    "HT160"),
     C_ITEM_STR_STR("160",                       "HT160")
-};
-
-static c_item_t map_country_str[] =
-{
-    C_ITEM_STR_STR("826",                       "UK"),  // ISO 3166-1
-    C_ITEM_STR_STR("840",                       "US"),
-    C_ITEM_STR_STR("841",                       "US"),  // (non-standard)
 };
 
 typedef enum
@@ -110,7 +102,7 @@ static void healthcheck_task(void *arg)
 {
     LOGI("Healthcheck re-sync");
     radio_trigger_resync();
-    evsched_task_reschedule_ms(EVSCHED_SEC(HEALTHCHECK_PERIOD_SECONDS));
+    evsched_task_reschedule_ms(EVSCHED_SEC(CONFIG_RDK_HEALTHCHECK_INTERVAL));
 }
 
 bool target_radio_init(const struct target_radio_ops *ops)
@@ -358,20 +350,13 @@ static bool radio_state_get(
 
     // country (w/ exists)
     memset(buf, 0, sizeof(buf));
-    ret = wifi_getRadioCountryCode(radioIndex, buf);
-    if (ret != RETURN_OK)
+    if (osync_hal_get_country_code(radio_ifname, buf, sizeof(buf)) != OSYNC_HAL_SUCCESS)
     {
         LOGW("%s: Failed to get country code", radio_ifname);
     }
     else
     {
-        str = c_get_str_by_strkey(map_country_str, buf);
-        if (strlen(str) == 0)
-        {
-            LOGW("%s: Failed to decode country (%s)", radio_ifname, buf);
-            str = buf;
-        }
-        STRSCPY(rstate->country, str);
+        STRSCPY(rstate->country, buf);
         rstate->country_exists = true;
     }
 
@@ -636,7 +621,7 @@ bool target_radio_config_init2()
     return true;
 }
 
-static bool radio_ifname_to_idx(const char *ifname, INT *outRadioIndex)
+bool radio_ifname_to_idx(const char *ifname, INT *outRadioIndex)
 {
     INT ret;
     ULONG r, rnum;
@@ -795,6 +780,20 @@ bool radio_rops_vstate(struct schema_Wifi_VIF_State *vstate)
     }
 
     g_rops.op_vstate(vstate);
+    return true;
+}
+
+bool radio_rops_vconfig(
+        struct schema_Wifi_VIF_Config *vconf,
+        const char *radio_ifname)
+{
+    if (!g_rops.op_vconf)
+    {
+        LOGE("%s: op_vconf not set", __func__);
+        return false;
+    }
+
+    g_rops.op_vconf(vconf, radio_ifname);
     return true;
 }
 

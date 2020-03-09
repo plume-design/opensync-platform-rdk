@@ -65,9 +65,6 @@ static int                  hal_cb_queue_len = 0;
 
 static struct target_radio_ops g_rops;
 
-// Don't know why this prototype is missing...
-extern INT wifi_getAssociatedDeviceDetail(INT apIndex, INT devIndex, wifi_device_t *output_struct);
-
 static INT clients_hal_assocdev_cb(INT ssid_index, wifi_associated_dev_t *sta)
 {
     hal_cb_entry_t      *cbe;

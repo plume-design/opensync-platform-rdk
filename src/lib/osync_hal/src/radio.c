@@ -24,12 +24,58 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <ctype.h>
+
 #include "osync_hal.h"
+#include "target.h"
+#include "target_internal.h"
 
+#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_GET_COUNTRY_CODE
 
-#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_FETCH_CONNECTED_CLIENTS
-osync_hal_return_t osync_hal_fetch_connected_clients(osync_hal_handle_client_fn handle_client_fn)
+#ifndef __WIFI_HAL_H__
+#include <ccsp/wifi_hal.h>
+#endif
+
+static c_item_t g_map_country_str[] =
 {
+    C_ITEM_STR_STR("826", "UK"),  // ISO 3166-1
+    C_ITEM_STR_STR("840", "US"),
+    C_ITEM_STR_STR("841", "US"),  // (non-standard)
+};
+
+osync_hal_return_t osync_hal_get_country_code(
+        const char *if_name,
+        char *buf,
+        size_t bufsz)
+{
+    INT ret;
+    INT radioIndex;
+    CHAR tmp_buf[WIFIHAL_MAX_BUFFER];
+    const char *str;
+
+    if (!radio_ifname_to_idx(if_name, &radioIndex))
+    {
+        return OSYNC_HAL_FAILURE;
+    }
+
+    memset(tmp_buf, 0, sizeof(tmp_buf));
+    ret = wifi_getRadioCountryCode(radioIndex, tmp_buf);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: Failed to get country code", if_name);
+        return OSYNC_HAL_FAILURE;
+    }
+
+    str = c_get_str_by_strkey(g_map_country_str, tmp_buf);
+    if (strlen(str) == 0)
+    {
+        // The country code is not in the map.
+        // Pass-through the value from HAL, but convert
+        // it to the uppercase letters.
+        str = str_toupper(tmp_buf);
+    }
+    strscpy(buf, str, bufsz);
+
     return OSYNC_HAL_SUCCESS;
 }
-#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_FETCH_CONNECTED_CLIENTS */
+#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_COUNTRY_CODE */

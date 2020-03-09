@@ -30,8 +30,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "osync_hal_config.h"
-
 /**
  * @file osync_hal.h
  * @brief OpenSync Hardware Abstraction Layer.
@@ -290,6 +288,17 @@ osync_hal_return_t osync_hal_inet_create_vlan(
         unsigned int vlan_id);
 
 /**
+ * @brief Destroy VLAN interface.
+ *
+ * Destroy virtual interface with VLAN id.
+ *
+ * @param[in] if_name name of interface
+ *
+ * @return OSYNC_HAL_SUCCESS or OSYNC_HAL_FAILURE.
+ */
+osync_hal_return_t osync_hal_inet_destroy_vlan(const char *if_name);
+
+/**
  * @brief Callback called on DHCP leases change.
  *
  * This callback is a non-blocking function called when DHCP leases
@@ -340,6 +349,24 @@ osync_hal_return_t osync_hal_devinfo_get_cloud_mode(osync_hal_devinfo_cloud_mode
  * @return OSYNC_HAL_SUCCESS or OSYNC_HAL_FAILURE.
  */
 osync_hal_return_t osync_hal_devinfo_get_redirector_addr(
+        char *buf,
+        size_t bufsz);
+
+/**
+ * @brief Get country code.
+ *
+ * Return the 802.11d regulatory domain country code which is used by
+ * given interface. The country code must be 2 capital letters ASCII string.
+ *
+ * @param[in]  if_name name of the radio interface
+ * @param[out] buf buffer to which the country code will be written
+ *                 Example output: "EU" or "US"
+ * @param[in]  bufsz size of the buf
+ *
+ * @return OSYNC_HAL_SUCCESS or OSYNC_HAL_FAILURE.
+ */
+osync_hal_return_t osync_hal_get_country_code(
+        const char *if_name,
         char *buf,
         size_t bufsz);
 
