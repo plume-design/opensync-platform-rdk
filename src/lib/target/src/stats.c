@@ -286,7 +286,7 @@ static bool stats_client_fetch(
         int                         radioIndex,
         int                         apIndex,
         char                       *apName,
-        wifi_associated_dev2_t     *assoc_dev)
+        wifi_associated_dev3_t     *assoc_dev)
 {
     stats_client_record_t *client_entry = NULL;
     wifi_associated_dev_rate_info_rx_stats_t *stats_rx = NULL;
@@ -306,7 +306,7 @@ static bool stats_client_fetch(
     dpp_mac_to_str(assoc_dev->cli_MACAddress, mac_str);
 
     // STATS
-    memcpy(&client_entry->dev2, assoc_dev, sizeof(client_entry->dev2));
+    memcpy(&client_entry->dev3, assoc_dev, sizeof(client_entry->dev3));
 
     ret = wifi_getApAssociatedDeviceStats(
             apIndex,
@@ -354,7 +354,7 @@ bool stats_clients_get(
         ds_dlist_t                 *client_list)
 {
     radio_essid_t ssid_name;
-    wifi_associated_dev2_t *client_array;
+    wifi_associated_dev3_t *client_array;
     UINT client_num;
     int ret;
     int i;
@@ -418,7 +418,7 @@ bool stats_clients_get(
 
         client_array = NULL;
         client_num = 0;
-        ret = wifi_getApAssociatedDeviceDiagnosticResult2(s, &client_array, &client_num);
+        ret = wifi_getApAssociatedDeviceDiagnosticResult3(s, &client_array, &client_num);
         if (ret != RETURN_OK)
         {
             LOGW("%s %s %ld %s: fetch client list",
@@ -509,7 +509,7 @@ bool stats_clients_convert(
         // whatever the driver reported with the last stat reading.
         LOGD("New connection - clear old stat records");
         memset(&data_old->stats, 0, sizeof(data_old->stats));
-        memset(&data_old->dev2, 0, sizeof(data_old->dev2));
+        memset(&data_old->dev3, 0, sizeof(data_old->dev3));
         memset(&data_old->stats_rx, 0, sizeof(data_old->stats_rx));
         memset(&data_old->stats_tx, 0, sizeof(data_old->stats_tx));
         data_old->num_rx = 0;
@@ -525,11 +525,11 @@ bool stats_clients_convert(
     ADD_DELTA(stats.errors_tx,  stats.cli_tx_errors);
     ADD_DELTA(stats.errors_rx,  stats.cli_rx_errors);
 
-    client_result->stats.rssi = auto_rssi_to_above_noise_floor(data_new->dev2.cli_RSSI);
+    client_result->stats.rssi = auto_rssi_to_above_noise_floor(data_new->dev3.cli_RSSI);
     LOG(TRACE, "Client %s stats %s=%d", mac_str, "stats.rssi", client_result->stats.rssi);
 
-    ASSIGN_AVG_FLOAT(stats.rate_tx, dev2.cli_LastDataUplinkRate / 1000.0);
-    ASSIGN_AVG_FLOAT(stats.rate_rx, dev2.cli_LastDataDownlinkRate / 1000.0);
+    ASSIGN_AVG_FLOAT(stats.rate_tx, dev3.cli_LastDataUplinkRate / 1000.0);
+    ASSIGN_AVG_FLOAT(stats.rate_rx, dev3.cli_LastDataDownlinkRate / 1000.0);
 
     // RX STATS
 
@@ -600,7 +600,7 @@ bool stats_clients_convert(
         DPP_RX(nss)     = NEW_RX(nss);
         DPP_RX(bw)      = NEW_RX(bw);
         // auto detect rssi format based on cli_RSSI sign
-        if (data_new->dev2.cli_RSSI < 0)
+        if (data_new->dev3.cli_RSSI < 0)
         {
             // rssi reported as negated absolute value - convert
             DPP_RX(rssi) = rssi_to_above_noise_floor(-(int)NEW_RX(rssi_combined));

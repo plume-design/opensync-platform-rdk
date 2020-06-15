@@ -881,7 +881,39 @@ bool vif_copy_to_config(
     return true;
 }
 
-bool vif_state_get(INT ssidIndex, struct schema_Wifi_VIF_State *vstate)
+static bool vif_get_radio_ifname(
+        INT ssidIndex,
+        char *radio_ifname,
+        size_t radio_ifname_size)
+{
+    INT ret;
+    INT radio_idx;
+
+    ret = wifi_getSSIDRadioIndex(ssidIndex, &radio_idx);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: cannot get radio idx for SSID index %d\n", __func__, ssidIndex);
+        return false;
+    }
+
+    if (radio_ifname_size != 0 && radio_ifname != NULL)
+    {
+        memset(radio_ifname, 0, radio_ifname_size);
+        ret = wifi_getRadioIfName(radio_idx, radio_ifname);
+        if (ret != RETURN_OK)
+        {
+            LOGE("%s: cannot get radio ifname for idx %d", __func__,
+                    radio_idx);
+            return false;
+        }
+        strscpy(radio_ifname, target_unmap_ifname(radio_ifname), radio_ifname_size);
+    }
+    return true;
+}
+
+bool vif_state_get(
+        INT ssidIndex,
+        struct schema_Wifi_VIF_State *vstate)
 {
     ULONG                           lval;
     CHAR                            buf[WIFIHAL_MAX_BUFFER];
@@ -1352,6 +1384,7 @@ bool target_vif_config_set2(
 bool vif_state_update(INT ssidIndex)
 {
     struct schema_Wifi_VIF_State vstate;
+    char radio_ifname[128];
 
     if (!vif_state_get(ssidIndex, &vstate))
     {
@@ -1359,6 +1392,12 @@ bool vif_state_update(INT ssidIndex)
         return false;
     }
 
+    if (!vif_get_radio_ifname(ssidIndex, radio_ifname, sizeof(radio_ifname)))
+    {
+        LOGE("%s: cannot get radio ifname for SSID index %d", __func__, ssidIndex);
+        return false;
+    }
+
     LOGN("Updating VIF state for SSID index %d", ssidIndex);
-    return radio_rops_vstate(&vstate);
+    return radio_rops_vstate(&vstate, radio_ifname);
 }

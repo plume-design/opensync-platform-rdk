@@ -96,7 +96,7 @@ typedef struct
     dpp_client_info_t               info;
     // Target specific client data
     wifi_associated_dev_stats_t     stats;
-    wifi_associated_dev2_t          dev2;
+    wifi_associated_dev3_t          dev3;
     wifi_associated_dev_rate_info_rx_stats_t stats_rx[STATS_RECORDS];
     wifi_associated_dev_rate_info_tx_stats_t stats_tx[STATS_RECORDS];
     unsigned                        num_rx;
@@ -171,7 +171,8 @@ bool                 maclearn_update(maclearn_type_t type,
 
 bool                 radio_cloud_mode_set(radio_cloud_mode_t mode);
 radio_cloud_mode_t   radio_cloud_mode_get(void);
-bool                 radio_rops_vstate(struct schema_Wifi_VIF_State *vstate);
+bool                 radio_rops_vstate(struct schema_Wifi_VIF_State *vstate,
+                                       const char *radio_ifname);
 void                 radio_trigger_resync(void);
 bool                 radio_ifname_to_idx(const char *ifname, INT *outRadioIndex);
 bool                 radio_rops_vconfig(struct schema_Wifi_VIF_Config *vconf,
@@ -209,9 +210,8 @@ bool                 clients_hal_fetch_existing(unsigned int apIndex);
 void                 cloud_config_mode_init(void);
 void                 cloud_config_set_mode(const char *device_mode);
 
-bool                 dhcp_lease_upsert(const osync_hal_dhcp_lease_t *dlip);
-void                 dhcp_lease_clear(osn_dhcp_server_t *self);
 void                 dhcp_server_status_dispatch(void);
+bool                 dhcp_server_resync_all_leases(void);
 
 extern struct ev_loop   *wifihal_evloop;
 

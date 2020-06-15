@@ -26,7 +26,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "os_nif.h"
 #include "osync_hal.h"
-#include "target.h"
 
 
 #ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_INIT
@@ -40,18 +39,6 @@ osync_hal_return_t osync_hal_init()
 #ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_READY
 osync_hal_return_t osync_hal_ready()
 {
-    if (!os_nif_is_interface_ready(BACKHAUL_IFNAME_2G))
-    {
-        LOGW("Target not ready, '%s' is not UP", BACKHAUL_IFNAME_2G);
-        return OSYNC_HAL_FAILURE;
-    }
-
-    if (!os_nif_is_interface_ready(BACKHAUL_IFNAME_5G))
-    {
-        LOGW("Target not ready, '%s' is not UP", BACKHAUL_IFNAME_5G);
-        return OSYNC_HAL_FAILURE;
-    }
-
     return OSYNC_HAL_SUCCESS;
 }
 #endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_READY */

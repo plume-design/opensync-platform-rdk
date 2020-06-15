@@ -199,20 +199,6 @@ osync_hal_return_t osync_hal_fetch_connected_clients(
         handle_client_fn);
 
 /**
- * @brief Get interface configuration.
- *
- * Get IP and other related information for given network interface.
- *
- * @param[in] if_name name of the interface
- * @param[out] config interface configuration
- *
- * @return OSYNC_HAL_SUCCESS or OSYNC_HAL_FAILURE.
- */
-osync_hal_return_t osync_hal_inet_get_iface_config(
-        const char *if_name,
-        osync_hal_inet_iface_config_t *config);
-
-/**
  * @brief Set interface configuration.
  *
  * Set IP and other related information for given network interface.
@@ -297,32 +283,6 @@ osync_hal_return_t osync_hal_inet_create_vlan(
  * @return OSYNC_HAL_SUCCESS or OSYNC_HAL_FAILURE.
  */
 osync_hal_return_t osync_hal_inet_destroy_vlan(const char *if_name);
-
-/**
- * @brief Callback called on DHCP leases change.
- *
- * This callback is a non-blocking function called when DHCP leases
- * are changed.
- * Note, if lease should be removed the lease_time should be set to "0".
- *
- * @return true on success false otherwise.
- */
-typedef bool (*osync_hal_dhcp_lease_fn)(const osync_hal_dhcp_lease_t *dhcp_lease);
-
-/**
- * @brief Synchronize all DHCP leases
- *
- * Calls dhcp_lease_fn() registered by osync_hal_dhcp_lease_register() for each
- * DHCP lease entry.
- * The dhcp_lease_fn() must be called directly inside this function (cannot
- * be deferred or cached). Must be called from the same context (thread) as
- * the osync_hal_dhcp_resync_all().
- *
- * @param dhcp_lease_fn function to be called for every dhcp lease entry
- *
- * @return OSYNC_HAL_SUCCESS or OSYNC_HAL_FAILURE.
- */
-osync_hal_return_t osync_hal_dhcp_resync_all(osync_hal_dhcp_lease_fn dhcp_lease_fn);
 
 /**
  * @brief Get current cloud mode.

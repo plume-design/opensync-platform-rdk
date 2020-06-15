@@ -90,21 +90,11 @@ config OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR
     bool "osync_hal_devinfo_get_redirector_addr()"
     default n
 
-config OSYNC_HAL_USE_DEFAULT_DHCP_RESYNC_ALL
-    bool "osync_hal_dhcp_resync_all()"
-    default n
-
-if OSYNC_HAL_USE_DEFAULT_DHCP_RESYNC_ALL
-    config OSYNC_HAL_DHCP_LEASES_PATH
-        string "DHCP leases path"
-        default "/tmp/dnsmasq.leases"
-        help
-            DHCP leases path
-endif
-
-config OSYNC_HAL_USE_DEFAULT_INET_GET_IFACE_CONFIG
-    bool "osync_hal_inet_get_iface_config()"
-    default n
+config RDK_DHCP_LEASES_PATH
+    string "DHCP leases path"
+    default "/tmp/dnsmasq.leases"
+    help
+        DHCP leases path
 
 config OSYNC_HAL_USE_DEFAULT_INET_SET_IFACE_CONFIG
     bool "osync_hal_inet_set_iface_config()"

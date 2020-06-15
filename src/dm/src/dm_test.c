@@ -51,7 +51,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define DM_CFG_TBL_MAX 1
 #define OVSDB_DEF_TABLE                 "Open_vSwitch"
 
-#define REBOOT_SCRIPT_PATH "/usr/plume/scripts/delayed-restart.sh"
+#define REBOOT_SCRIPT_PATH "/usr/opensync/scripts/delayed-restart.sh"
 
 /*
  * All the context information for DM

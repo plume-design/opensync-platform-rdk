@@ -44,6 +44,29 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define DEVINFO_HOME_IP             "lip"
 #define DEVINFO_HOME_IPv6           "lipv6"
 
+/**
+ * The length of MAC address in ASCII string format.
+ *  "AA:BB:CC:DD:EE:FF" -> 17 characters plus NULL terminator.
+ */
+#define MAC_ADDR_STR_LEN 18
+
+/**
+ * The maximum length of IP address in ASCII string format.
+ *  "255.255.255.255" -> 15 characters plus NULL terminator.
+ */
+#define IP_ADDR_STR_LEN 16
+
+/**
+ * @brief Interface configuration.
+ */
+typedef struct {
+    char inet_addr[IP_ADDR_STR_LEN];
+    char mac_str[MAC_ADDR_STR_LEN];
+} devinfo_inet_iface_config_t;
+
 bool devinfo_getv(const char *what, char *dest, size_t destsz);
+bool devinfo_get_inet_iface_config(
+        const char *if_name,
+        devinfo_inet_iface_config_t *config);
 
 #endif /* DEVINFO_H_INCLUDED */

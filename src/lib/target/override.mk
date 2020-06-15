@@ -29,16 +29,14 @@
 ##############################################################################
 
 UNIT_SRC := $(TARGET_COMMON_SRC)
-UNIT_SRC := $(filter-out src/target_inet.c,$(UNIT_SRC))
-UNIT_SRC := $(filter-out src/target_dhcp.c,$(UNIT_SRC))
 UNIT_SRC := $(filter-out src/target_mac_learn.c,$(UNIT_SRC))
+UNIT_SRC := $(filter-out src/target_kconfig.c,$(UNIT_SRC))
 
 UNIT_SRC_DIR := $(OVERRIDE_DIR)/src
 
 UNIT_SRC_TOP :=
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/target.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/entity.c
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/managers.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/clients.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/radio.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/vif.c
@@ -52,11 +50,12 @@ UNIT_SRC_TOP += $(UNIT_SRC_DIR)/cloud_config.c
 UNIT_CFLAGS  += -I$(OVERRIDE_DIR)/inc
 UNIT_CFLAGS  += -DENABLE_MESH_SOCKETS
 
-UNIT_DEPS    := $(PLATFORM_DIR)/src/lib/devinfo
+UNIT_DEPS    += $(PLATFORM_DIR)/src/lib/devinfo
 UNIT_DEPS    += $(PLATFORM_DIR)/src/lib/osync_hal
 UNIT_DEPS    += src/lib/evsched
 UNIT_DEPS    += src/lib/schema
 UNIT_DEPS    += src/lib/const
+UNIT_DEPS    += src/lib/osp
 
 UNIT_DEPS_CFLAGS += src/lib/ovsdb # Needed for ovsdb_utils.h
 UNIT_DEPS_CFLAGS += src/lib/osn   # Needed for osn_dhcp.h

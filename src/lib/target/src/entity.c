@@ -35,6 +35,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target.h"
 #include "devinfo.h"
 #include "const.h"
+#include "build_version.h"
 
 /*****************************************************************************/
 

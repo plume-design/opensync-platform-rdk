@@ -37,64 +37,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "util.h"
 #include "os_util.h"
 #include "osync_hal.h"
-#include "devinfo.h"
-
-
-#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_INET_GET_IFACE_CONFIG
-
-#define DEVINFO_CACHED_SIZE 64
-
-osync_hal_return_t osync_hal_inet_get_iface_config(
-        const char *if_name,
-        osync_hal_inet_iface_config_t *config)
-{
-    static char home_ip_cached[DEVINFO_CACHED_SIZE];
-    static char home_mac_cached[DEVINFO_CACHED_SIZE];
-    static char wan_ip_cached[DEVINFO_CACHED_SIZE];
-    static char wan_mac_cached[DEVINFO_CACHED_SIZE];
-
-    static bool once = true;
-
-    /*
-     * On RDK we only handle interfaces accessed via deviceinfo.sh.
-     * Other interfaces are handled directly by NM via standard Linux
-     * networking tools.
-     * Calls to deviceinfo.sh may take significant amount of time,
-     * so we cache ip and mac for optimization purposes.
-     * We also assume the WAN IP and MAC will not be changed without
-     * restarting OpenSync.
-     */
-    if (once)
-    {
-        devinfo_getv(DEVINFO_HOME_IP,  home_ip_cached,  sizeof(home_ip_cached));
-        devinfo_getv(DEVINFO_HOME_MAC, home_mac_cached, sizeof(home_mac_cached));
-        devinfo_getv(DEVINFO_WAN_IP,   wan_ip_cached,   sizeof(wan_ip_cached));
-        devinfo_getv(DEVINFO_WAN_MAC,  wan_mac_cached,  sizeof(wan_mac_cached));
-
-        once = false;
-    }
-
-    if (!strcmp(if_name, CONFIG_RDK_LAN_BRIDGE_NAME))
-    {
-        STRSCPY(config->inet_addr, home_ip_cached);
-        STRSCPY(config->mac_str, home_mac_cached);
-    }
-    else if (!strcmp(if_name, CONFIG_RDK_WAN_BRIDGE_NAME))
-    {
-        STRSCPY(config->inet_addr, wan_ip_cached);
-        STRSCPY(config->mac_str, wan_mac_cached);
-    }
-    else
-    {
-        LOGE("Cannot get config for %s. Only %s and %s interfaces available", if_name,
-                CONFIG_RDK_LAN_BRIDGE_NAME, CONFIG_RDK_WAN_BRIDGE_NAME);
-        return OSYNC_HAL_FAILURE;
-    }
-
-
-    return OSYNC_HAL_SUCCESS;
-}
-#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_INET_GET_IFACE_CONFIG */
 
 
 #ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_INET_SET_IFACE_CONFIG
@@ -257,11 +199,6 @@ osync_hal_return_t osync_hal_inet_create_gre(
     char cmd[256];
     int rc;
 
-    if (osync_hal_inet_destroy_gre(if_name) != OSYNC_HAL_SUCCESS)
-    {
-        return OSYNC_HAL_FAILURE;
-    }
-
     snprintf(cmd, sizeof(cmd),
             "ip link add %s type gretap"
             " local %s"
@@ -324,9 +261,6 @@ osync_hal_return_t osync_hal_inet_add_to_bridge(
         const char *if_name,
         const char *br_name)
 {
-    char cmd[256];
-    int rc;
-
     if (osync_hal_is_ovs_bridge(br_name) == OSYNC_HAL_SUCCESS)
     {
         // If bridge is ovs bridge then do nothing.
@@ -334,18 +268,7 @@ osync_hal_return_t osync_hal_inet_add_to_bridge(
         return OSYNC_HAL_SUCCESS;
     }
 
-    memset(cmd, 0, sizeof(cmd));
-
-    snprintf(cmd, sizeof(cmd), "brctl addif %s %s", br_name, if_name);
-    LOGD("%s: Adding to bridge with \"%s\"", if_name, cmd);
-    rc = system(cmd);
-    if (!WIFEXITED(rc) || WEXITSTATUS(rc) != 0)
-    {
-        LOGE("%s: Failed to add GRE to bridge \"%s\", rc = %d",
-        if_name, cmd, WEXITSTATUS(rc));
-        return OSYNC_HAL_FAILURE;
-    }
-
+    // Placeholder for any vendor-specific bridge operations handling
     return OSYNC_HAL_SUCCESS;
 }
 #endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_INET_ADD_TO_BRIDGE */

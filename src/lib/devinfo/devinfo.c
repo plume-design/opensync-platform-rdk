@@ -55,3 +55,55 @@ bool devinfo_getv(const char *what, char *dest, size_t destsz)
 
     return true;
 }
+
+#define DEVINFO_CACHED_SIZE 64
+
+bool devinfo_get_inet_iface_config(
+        const char *if_name,
+        devinfo_inet_iface_config_t *config)
+{
+    static char home_ip_cached[DEVINFO_CACHED_SIZE];
+    static char home_mac_cached[DEVINFO_CACHED_SIZE];
+    static char wan_ip_cached[DEVINFO_CACHED_SIZE];
+    static char wan_mac_cached[DEVINFO_CACHED_SIZE];
+
+    static bool once = true;
+
+    /*
+     * On RDK we only handle interfaces accessed via deviceinfo.sh.
+     * Other interfaces are handled directly by NM via standard Linux
+     * networking tools.
+     * Calls to deviceinfo.sh may take significant amount of time,
+     * so we cache IP and MAC for optimization purposes.
+     * We also assume the WAN IP and MAC will not be changed without
+     * restarting OpenSync.
+     */
+    if (once)
+    {
+        devinfo_getv(DEVINFO_HOME_IP,  home_ip_cached,  sizeof(home_ip_cached));
+        devinfo_getv(DEVINFO_HOME_MAC, home_mac_cached, sizeof(home_mac_cached));
+        devinfo_getv(DEVINFO_WAN_IP,   wan_ip_cached,   sizeof(wan_ip_cached));
+        devinfo_getv(DEVINFO_WAN_MAC,  wan_mac_cached,  sizeof(wan_mac_cached));
+
+        once = false;
+    }
+
+    if (!strcmp(if_name, CONFIG_RDK_LAN_BRIDGE_NAME))
+    {
+        STRSCPY(config->inet_addr, home_ip_cached);
+        STRSCPY(config->mac_str, home_mac_cached);
+    }
+    else if (!strcmp(if_name, CONFIG_RDK_WAN_BRIDGE_NAME))
+    {
+        STRSCPY(config->inet_addr, wan_ip_cached);
+        STRSCPY(config->mac_str, wan_mac_cached);
+    }
+    else
+    {
+        LOGD("Cannot get config for %s. Only %s and %s interfaces available",
+             if_name, CONFIG_RDK_LAN_BRIDGE_NAME, CONFIG_RDK_WAN_BRIDGE_NAME);
+        return false;
+    }
+
+    return true;
+}

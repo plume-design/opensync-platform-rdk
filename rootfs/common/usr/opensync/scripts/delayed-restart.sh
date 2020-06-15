@@ -24,7 +24,12 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#
-# This script is called by various managers for fatal restart
 
-/usr/plume/scripts/managers.init restart < /dev/null > /dev/null 2>&1 &
+if [ $# -eq 1 ]; then
+    let tm_delay="$1"
+else
+    let tm_delay=10
+fi
+
+sleep $tm_delay
+/usr/opensync/scripts/restart.sh

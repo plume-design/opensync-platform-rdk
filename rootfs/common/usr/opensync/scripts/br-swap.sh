@@ -33,8 +33,8 @@ BRLAN0="brlan0"
 ovsh_state()
 {
     state="$1"
-    if [ "`/usr/plume/tools/ovsh u Node_State -w key==OVS.Enable value~=$state`" == 0 ]; then
-        /usr/plume/tools/ovsh i Node_State module~=rdk-rfc key~=OVS.Enable value~="$state"
+    if [ "`/usr/opensync/tools/ovsh u Node_State -w key==OVS.Enable value~=$state`" == 0 ]; then
+        /usr/opensync/tools/ovsh i Node_State module~=rdk-rfc key~=OVS.Enable value~="$state"
     fi
 }
 

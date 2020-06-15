@@ -2,11 +2,11 @@
 
 NAME=managers
 
-PLUME_BASE_DIR="/usr/plume"
+OPENSYNC_BASE_DIR="/usr/opensync"
 
-PLUME_BIN_DIR="${PLUME_BASE_DIR}/bin"
-PLUME_ETC_DIR="${PLUME_BASE_DIR}/etc"
-PLUME_RUN_DIR="/var/run/plume"
+OPENSYNC_BIN_DIR="${OPENSYNC_BASE_DIR}/bin"
+OPENSYNC_ETC_DIR="${OPENSYNC_BASE_DIR}/etc"
+OPENSYNC_RUN_DIR="/var/run/opensync"
 
 OVS_RUN_DIR=/var/run/openvswitch
 OVS_ETC_DIR=/tmp/etc/openvswitch
@@ -15,7 +15,7 @@ LM_TRIGGER_DIR="/tmp/lm/trigger"
 
 RUN_USER="root"
 
-. $PLUME_BASE_DIR/scripts/platform.funcs
+. $OPENSYNC_BASE_DIR/scripts/platform.funcs
 
 gre_filter() {
     awk '
@@ -49,7 +49,7 @@ ovs_start() {
     echo "Starting OpenSync OVSDB management"
 
     # reset non-persistent DB
-    cp -f ${PLUME_ETC_DIR}/conf.db.bck ${OVS_ETC_DIR}/conf.db && chown ${RUN_USER} ${OVS_ETC_DIR}/conf.db
+    cp -f ${OPENSYNC_ETC_DIR}/conf.db.bck ${OVS_ETC_DIR}/conf.db && chown ${RUN_USER} ${OVS_ETC_DIR}/conf.db
 
     # ovsdb-server start against non-persistent DB
     for x in /usr/sbin/ovsdb-server /tmp/plume_dnld/usr/sbin/ovsdb-server; do
@@ -113,11 +113,11 @@ ovs_stop() {
     fi
 }
 
-plume_start() {
+opensync_start() {
     platform_prereq_check || return 1
 
-    if [ ! -d ${PLUME_RUN_DIR} ]; then
-        mkdir -p ${PLUME_RUN_DIR} && chown ${RUN_USER} ${PLUME_RUN_DIR}
+    if [ ! -d ${OPENSYNC_RUN_DIR} ]; then
+        mkdir -p ${OPENSYNC_RUN_DIR} && chown ${RUN_USER} ${OPENSYNC_RUN_DIR}
     fi
     if [ ! -d ${LM_TRIGGER_DIR} ]; then
         mkdir -p ${LM_TRIGGER_DIR} && chown ${RUN_USER} ${LM_TRIGGER_DIR}
@@ -125,16 +125,16 @@ plume_start() {
 
     platform_start
 
-    if [ -x ${PLUME_BIN_DIR}/pl2rld ]; then
+    if [ -x ${OPENSYNC_BIN_DIR}/pl2rld ]; then
         echo "Starting OpenSync Logger to RDK Logger Daemon"
-        start-stop-daemon -c ${RUN_USER} -S -b -x ${PLUME_BIN_DIR}/pl2rld
+        start-stop-daemon -c ${RUN_USER} -S -b -x ${OPENSYNC_BIN_DIR}/pl2rld
     fi
 
     echo "Starting OpenSync managers"
-    start-stop-daemon -c ${RUN_USER} -S -b -x ${PLUME_BIN_DIR}/dm
+    start-stop-daemon -c ${RUN_USER} -S -b -x ${OPENSYNC_BIN_DIR}/dm
 }
 
-plume_stop() {
+opensync_stop() {
     echo "Stopping OpenSync managers"
     killall -s SIGKILL dm wm sm cm nm lm bm qm om pl2rld
     gre_cleanup
@@ -159,29 +159,29 @@ action() {
             RET=$?
             ;;
 
-        "plume-start")
-            plume_start
+        "opensync-start")
+            opensync_start
             RET=$?
             ;;
 
-        "plume-stop")
-            plume_stop
+        "opensync-stop")
+            opensync_stop
             RET=$?
             ;;
 
-        "plume-restart")
-            action plume-stop
-            action plume-start
+        "opensync-restart")
+            action opensync-stop
+            action opensync-start
             RET=$?
             ;;
 
         "start")
-            ovs_start && sleep 2 && plume_start
+            ovs_start && sleep 2 && opensync_start
             RET=$?
             ;;
 
         "stop")
-            plume_stop
+            opensync_stop
             ovs_stop
             RET=$?
             ;;
@@ -194,7 +194,7 @@ action() {
         *)
             echo "Usage: $0 {start|stop|restart}"
             echo "       $0 {ovs-start|ovs-stop|ovs-restart}"
-            echo "       $0 {plume-start|plume-stop|plume-restart}"
+            echo "       $0 {opensync-start|opensync-stop|opensync-restart}"
             RET=1
             ;;
 

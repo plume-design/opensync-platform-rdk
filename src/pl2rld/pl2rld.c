@@ -53,8 +53,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define MODULE_ID           LOG_MODULE_ID_MAIN
 
-#define PLUME_CLIENTS_MAX   16
-#define PLUME_CLIENTS_BUF   4096
+#define PL2RLD_CLIENTS_MAX   16
+#define PL2RLD_CLIENTS_BUF   4096
 
 #define RDK_LOGGER_INI      "/etc/debug.ini"
 #define RDK_LOGGER_MODULE   "LOG.RDK.MeshService"
@@ -80,35 +80,33 @@ ev_signal           _ev_sigterm;
 ev_signal           _ev_sigint;
 ev_io               _ev_listener;
 
-int                 plume_listener_fd   = -1;
-ds_dlist_t          plume_clients;
+int                 pl2rld_listener_fd   = -1;
+ds_dlist_t          pl2rld_clients;
 
 /*****************************************************************************/
 
-pclient_t *     plume_client_by_evio(ev_io *evio);
-bool            plume_client_listener_init(const char *spath);
-bool            plume_client_listener_cleanup(void);
-bool            plume_client_add(int fd);
-void            plume_client_remove(pclient_t *pc);
-void            plume_client_cleanup(void);
-void            plume_client_recv(pclient_t *pc);
-void            plume_client_recv_reg(pclient_t *pc, pl2rl_msg_t *msg);
-void            plume_client_recv_log(pclient_t *pc, pl2rl_msg_t *msg, char *text);
-void            plume_client_accept_cb(struct ev_loop *loop, ev_io *evio, int revents);
-void            plume_client_evio_cb(struct ev_loop *loop, ev_io *evio, int revents);
+pclient_t *     pl2rld_client_by_evio(ev_io *evio);
+bool            pl2rld_client_listener_init(const char *spath);
+bool            pl2rld_client_listener_cleanup(void);
+bool            pl2rld_client_add(int fd);
+void            pl2rld_client_remove(pclient_t *pc);
+void            pl2rld_client_cleanup(void);
+void            pl2rld_client_recv(pclient_t *pc);
+void            pl2rld_client_recv_reg(pclient_t *pc, pl2rl_msg_t *msg);
+void            pl2rld_client_recv_log(pclient_t *pc, pl2rl_msg_t *msg, char *text);
+void            pl2rld_client_accept_cb(struct ev_loop *loop, ev_io *evio, int revents);
+void            pl2rld_client_evio_cb(struct ev_loop *loop, ev_io *evio, int revents);
 
 /*****************************************************************************/
 
-void
-handle_signal(struct ev_loop *loop, ev_signal *w, int revents)
+void handle_signal(struct ev_loop *loop, ev_signal *w, int revents)
 {
     LOGEM("Received signal %d, triggering shutdown", w->signum);
     ev_break(_ev_loop, EVBREAK_ALL);
     return;
 }
 
-bool
-plume_client_add(int fd)
+bool pl2rld_client_add(int fd)
 {
     pclient_t       *pc;
 
@@ -120,18 +118,17 @@ plume_client_add(int fd)
 
     // Setup EV IO Watcher
     pc->fd = fd;
-    ev_io_init(&pc->evio, plume_client_evio_cb, pc->fd, EV_READ);
+    ev_io_init(&pc->evio, pl2rld_client_evio_cb, pc->fd, EV_READ);
     ev_io_start(_ev_loop, &pc->evio);
 
     // Add to client list
-    ds_dlist_insert_tail(&plume_clients, pc);
+    ds_dlist_insert_tail(&pl2rld_clients, pc);
 
     LOGI("[fd %d] New client connection", pc->fd);
     return true;
 }
 
-void
-plume_client_remove(pclient_t *pc)
+void pl2rld_client_remove(pclient_t *pc)
 {
     LOGI("[fd %d] Removing client connection", pc->fd);
 
@@ -140,7 +137,7 @@ plume_client_remove(pclient_t *pc)
     close(pc->fd);
 
     // Remove from client list
-    ds_dlist_remove(&plume_clients, pc);
+    ds_dlist_remove(&pl2rld_clients, pc);
 
     // Free client
     free(pc);
@@ -148,26 +145,24 @@ plume_client_remove(pclient_t *pc)
     return;
 }
 
-void
-plume_client_cleanup(void)
+void pl2rld_client_cleanup(void)
 {
     pclient_t       *pc;
 
     // Remove all clients
-    while ((pc = ds_dlist_head(&plume_clients)))
+    while ((pc = ds_dlist_head(&pl2rld_clients)))
     {
-        plume_client_remove(pc);
+        pl2rld_client_remove(pc);
     }
 
     return;
 }
 
-pclient_t *
-plume_client_by_evio(ev_io *evio)
+pclient_t* pl2rld_client_by_evio(ev_io *evio)
 {
     pclient_t       *pc;
 
-    ds_dlist_foreach(&plume_clients, pc) {
+    ds_dlist_foreach(&pl2rld_clients, pc) {
         if (evio == &pc->evio) {
             return pc;
         }
@@ -176,14 +171,13 @@ plume_client_by_evio(ev_io *evio)
     return NULL;
 }
 
-void
-plume_client_evio_cb(struct ev_loop *loop, ev_io *evio, int revents)
+void pl2rld_client_evio_cb(struct ev_loop *loop, ev_io *evio, int revents)
 {
     pclient_t       *pc;
 
-    if (!(pc = plume_client_by_evio(evio)))
+    if (!(pc = pl2rld_client_by_evio(evio)))
     {
-        LOGE("plume_client_evio_cb() -- Client not found, stopping evio");
+        LOGE("pl2rld_client_evio_cb() -- Client not found, stopping evio");
         ev_io_stop(loop, evio);
         return;
     }
@@ -191,21 +185,20 @@ plume_client_evio_cb(struct ev_loop *loop, ev_io *evio, int revents)
     if (revents & EV_ERROR)
     {
         LOGW("[fd %d] Connection closed", pc->fd);
-        plume_client_remove(pc);
+        pl2rld_client_remove(pc);
         return;
     }
 
-    plume_client_recv(pc);
+    pl2rld_client_recv(pc);
 
     return;
 }
 
-void
-plume_client_recv(pclient_t *pc)
+void pl2rld_client_recv(pclient_t *pc)
 {
     pl2rl_msg_hdr_t     *hdr;
     pl2rl_msg_t         *msg;
-    char                buf[PLUME_CLIENTS_BUF];
+    char                buf[PL2RLD_CLIENTS_BUF];
     char                *text;
     int                 hdr_len = sizeof(pl2rl_msg_hdr_t);
     int                 rlen;
@@ -219,12 +212,12 @@ plume_client_recv(pclient_t *pc)
             return;
         }
         LOGE("[fd %d] Error reading from client", pc->fd);
-        plume_client_remove(pc);
+        pl2rld_client_remove(pc);
         return;
     }
     else if (ret != hdr_len) {
         LOGE("[fd %d] Malformed packet received", pc->fd);
-        plume_client_remove(pc);
+        pl2rld_client_remove(pc);
         return;
     }
 
@@ -233,7 +226,7 @@ plume_client_recv(pclient_t *pc)
     if (hdr->msg_type >= PL2RL_MSG_TYPE_MAX)
     {
         LOGE("[fd %d] Invalid message type received", pc->fd);
-        plume_client_remove(pc);
+        pl2rld_client_remove(pc);
         return;
     }
 
@@ -243,12 +236,12 @@ plume_client_recv(pclient_t *pc)
     if (ret < 0)
     {
         LOGE("[fd %d] Error reading data from client", pc->fd);
-        plume_client_remove(pc);
+        pl2rld_client_remove(pc);
         return;
     }
     else if (ret != rlen) {
         LOGE("[fd %d] Malformed data received", pc->fd);
-        plume_client_remove(pc);
+        pl2rld_client_remove(pc);
         return;
     }
 
@@ -257,22 +250,21 @@ plume_client_recv(pclient_t *pc)
     switch (msg->hdr.msg_type)
     {
     case PL2RL_MSG_TYPE_REGISTER:
-        plume_client_recv_reg(pc, msg);
+        pl2rld_client_recv_reg(pc, msg);
         break;
 
     case PL2RL_MSG_TYPE_LOG:
         // Set text pointer
         hdr_len += sizeof(pl2rl_msg_log_data_t);
         text = (char *)buf + hdr_len;
-        plume_client_recv_log(pc, msg, text);
+        pl2rld_client_recv_log(pc, msg, text);
         break;
     }
 
     return;
 }
 
-void
-plume_client_recv_reg(pclient_t *pc, pl2rl_msg_t *msg)
+void pl2rld_client_recv_reg(pclient_t *pc, pl2rl_msg_t *msg)
 {
     LOGI("[fd %d] Registered as \"%s\", PID %u",
          pc->fd, msg->data.reg.name, msg->data.reg.pid);
@@ -284,8 +276,7 @@ plume_client_recv_reg(pclient_t *pc, pl2rl_msg_t *msg)
     return;
 }
 
-void
-plume_client_recv_log(pclient_t *pc, pl2rl_msg_t *msg, char *text)
+void pl2rld_client_recv_log(pclient_t *pc, pl2rl_msg_t *msg, char *text)
 {
     uint32_t            rdk_level = RDK_LOG_DEBUG;
     char                *sev;
@@ -294,7 +285,7 @@ plume_client_recv_log(pclient_t *pc, pl2rl_msg_t *msg, char *text)
     if (!pc->registered)
     {
         LOGE("[fd %d] Received LOG message before registration", pc->fd);
-        plume_client_remove(pc);
+        pl2rld_client_remove(pc);
         return;
     }
 
@@ -357,8 +348,7 @@ plume_client_recv_log(pclient_t *pc, pl2rl_msg_t *msg, char *text)
     return;
 }
 
-bool
-plume_client_listener_init(const char *spath)
+bool pl2rld_client_listener_init(const char *spath)
 {
     struct sockaddr_un      addr;
     int                     fd;
@@ -397,7 +387,7 @@ plume_client_listener_init(const char *spath)
     }
 
     // Listen to socket
-    if (listen(fd, PLUME_CLIENTS_MAX) < 0)
+    if (listen(fd, PL2RLD_CLIENTS_MAX) < 0)
     {
         LOGE("Failed to listen on OpenSync listener socket, errno = %d (%s)",
              errno, strerror(errno));
@@ -406,8 +396,8 @@ plume_client_listener_init(const char *spath)
     }
 
     // Setup EV IO Watcher
-    plume_listener_fd = fd;
-    ev_io_init(&_ev_listener, plume_client_accept_cb, fd, EV_READ);
+    pl2rld_listener_fd = fd;
+    ev_io_init(&_ev_listener, pl2rld_client_accept_cb, fd, EV_READ);
     ev_io_start(_ev_loop, &_ev_listener);
 
     LOGI("Listening on unix domain socket \"%c%s\"",
@@ -415,21 +405,19 @@ plume_client_listener_init(const char *spath)
     return true;
 }
 
-bool
-plume_client_listener_cleanup(void)
+bool pl2rld_client_listener_cleanup(void)
 {
-    if (plume_listener_fd >= 0)
+    if (pl2rld_listener_fd >= 0)
     {
         ev_io_stop(_ev_loop, &_ev_listener);
-        close(plume_listener_fd);
-        plume_listener_fd = -1;
+        close(pl2rld_listener_fd);
+        pl2rld_listener_fd = -1;
     }
 
     return true;
 }
 
-void
-plume_client_accept_cb(struct ev_loop *loop, ev_io *evio, int revents)
+void pl2rld_client_accept_cb(struct ev_loop *loop, ev_io *evio, int revents)
 {
     struct sockaddr_un      addr;
     int                     addr_len = sizeof(addr);
@@ -437,7 +425,7 @@ plume_client_accept_cb(struct ev_loop *loop, ev_io *evio, int revents)
     int                     fd;
 
     // Accept a new client connection
-    fd = accept(plume_listener_fd, (struct sockaddr *)&addr, (socklen_t *)&addr_len);
+    fd = accept(pl2rld_listener_fd, (struct sockaddr *)&addr, (socklen_t *)&addr_len);
     if (fd < 0) {
         LOGE("Failed to accept new client connection, errno = %d (%s)",
              errno, strerror(errno));
@@ -460,13 +448,12 @@ plume_client_accept_cb(struct ev_loop *loop, ev_io *evio, int revents)
     }
 
     // Add new client
-    plume_client_add(fd);
+    pl2rld_client_add(fd);
 
     return;
 }
 
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
     bool        background = false;
     int         verbose = 0;
@@ -526,13 +513,13 @@ main(int argc, char **argv)
     ev_signal_start(_ev_loop, &_ev_sigint);
 
     // Initialize client list
-    ds_dlist_init(&plume_clients, pclient_t, dsl_node);
+    ds_dlist_init(&pl2rld_clients, pclient_t, dsl_node);
 
     // Initialize RDK Logger
     rdk_logger_init(RDK_LOGGER_INI);
 
     // Initialize OpenSync Listener
-    if (!plume_client_listener_init(PL2RL_SOCKET_PATH))
+    if (!pl2rld_client_listener_init(PL2RL_SOCKET_PATH))
     {
         fprintf(stderr, "Failed to setup unix domain socket -- exiting\n");
         return(1);
@@ -545,10 +532,10 @@ main(int argc, char **argv)
     LOGW("PL2RLD shutting down...");
 
     // Cleanup listener
-    plume_client_listener_cleanup();
+    pl2rld_client_listener_cleanup();
 
     // Cleanup clients
-    plume_client_cleanup();
+    pl2rld_client_cleanup();
 
     ev_default_destroy();
 

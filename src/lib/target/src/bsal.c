@@ -41,6 +41,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define MAC_ADDR_UNPACK(addr) addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]
 
+typedef enum {
+    BSAL_BAND_24G               = 0,
+    BSAL_BAND_5G,
+    BSAL_BAND_COUNT
+} bsal_band_t;
+
 typedef struct
 {
     bsal_band_t band;
@@ -86,14 +92,95 @@ static c_item_t map_rssi_xing[] =
     C_ITEM_VAL(WIFI_STEERING_RSSI_HIGHER, BSAL_RSSI_HIGHER)
 };
 
+typedef struct
+{
+    uint8_t             mac[BSAL_MAC_ADDR_LEN];
+    bsal_client_info_t  client;
+    ds_dlist_node_t     node;
+} bsal_client_info_cache_t;
+
+static ds_dlist_t g_client_info_list = DS_DLIST_INIT(
+        bsal_client_info_cache_t,
+        node);
+
 /*****************************************************************************/
+
+static bsal_client_info_cache_t *bsal_find_client_info(const uint8_t *mac)
+{
+    bsal_client_info_cache_t *client_info_cache;
+
+    ds_dlist_foreach(&g_client_info_list, client_info_cache)
+    {
+        if (!memcmp(mac, client_info_cache->mac, BSAL_MAC_ADDR_LEN))
+        {
+            return client_info_cache;
+        }
+    }
+
+    LOGD("BSAL %02x:%02x:%02x:%02x:%02x:%02x client_info not found",
+               mac[0], mac[1], mac[2],
+               mac[3], mac[4], mac[5]);
+
+    return NULL;
+}
+
+static void bsal_client_info_update(const wifi_steering_evConnect_t *connect)
+{
+    bsal_client_info_cache_t *client_info_cache;
+
+    client_info_cache = bsal_find_client_info(connect->client_mac);
+    if (client_info_cache == NULL)  /* Allocate new node */
+    {
+        client_info_cache = (bsal_client_info_cache_t *)calloc(1, sizeof(*client_info_cache));
+        if (client_info_cache == NULL)
+        {
+            LOGE("BSAL Failed to allocate memory for new client info");
+            return;
+        }
+        memcpy(client_info_cache->mac, connect->client_mac, sizeof(client_info_cache->mac));
+        ds_dlist_insert_tail(&g_client_info_list, client_info_cache);
+    }
+
+   client_info_cache->client.is_BTM_supported = connect->isBTMSupported;
+   client_info_cache->client.is_RRM_supported = connect->isRRMSupported;
+   client_info_cache->client.band_cap_2G = connect->bandCap2G;
+   client_info_cache->client.band_cap_5G = connect->bandCap5G;
+   client_info_cache->client.datarate_info.max_chwidth = connect->datarateInfo.maxChwidth;
+   client_info_cache->client.datarate_info.max_streams = connect->datarateInfo.maxStreams;
+   client_info_cache->client.datarate_info.phy_mode = connect->datarateInfo.phyMode;
+   client_info_cache->client.datarate_info.max_MCS = connect->datarateInfo.maxMCS;
+   client_info_cache->client.datarate_info.max_txpower = connect->datarateInfo.maxTxpower;
+   client_info_cache->client.datarate_info.is_static_smps = connect->datarateInfo.isStaticSmps;
+   client_info_cache->client.datarate_info.is_mu_mimo_supported = connect->datarateInfo.isMUMimoSupported;
+   client_info_cache->client.rrm_caps.link_meas = connect->rrmCaps.linkMeas;
+   client_info_cache->client.rrm_caps.neigh_rpt = connect->rrmCaps.neighRpt;
+   client_info_cache->client.rrm_caps.bcn_rpt_passive = connect->rrmCaps.bcnRptPassive;
+   client_info_cache->client.rrm_caps.bcn_rpt_active = connect->rrmCaps.bcnRptActive;
+   client_info_cache->client.rrm_caps.bcn_rpt_table = connect->rrmCaps.bcnRptTable;
+   client_info_cache->client.rrm_caps.lci_meas = connect->rrmCaps.lciMeas;
+   client_info_cache->client.rrm_caps.ftm_range_rpt = connect->rrmCaps.ftmRangeRpt;
+
+   /* assoc_ies and assoc_ies_len set to 0 */
+}
+
+static void bsal_client_info_remove(const uint8_t *mac)
+{
+    bsal_client_info_cache_t *client_info_cache;
+
+    client_info_cache = bsal_find_client_info(mac);
+    if (client_info_cache == NULL)
+    {
+        return;
+    }
+    ds_dlist_remove(&g_client_info_list, client_info_cache);
+    free(client_info_cache);
+}
 
 static void process_event(
         UINT steeringgroupIndex,
         wifi_steering_event_t *wifi_hal_event)
 {
     bsal_event_t *bsal_event = NULL;
-    bsal_band_t band = BSAL_BAND_24G;
     uint32_t val = 0;
 
     // If we don't have a callback, just ignore the data
@@ -111,12 +198,10 @@ static void process_event(
 
     if (group.iface_24g && group.iface_24g->wifihal_cfg.apIndex == wifi_hal_event->apIndex)
     {
-        band = BSAL_BAND_24G;
         STRSCPY(bsal_event->ifname, group.iface_24g->bsal_cfg.ifname);
     }
     else if (group.iface_5g && group.iface_5g->wifihal_cfg.apIndex == wifi_hal_event->apIndex)
     {
-        band = BSAL_BAND_5G;
         STRSCPY(bsal_event->ifname, group.iface_5g->bsal_cfg.ifname);
     }
     else
@@ -125,7 +210,8 @@ static void process_event(
         goto end;
     }
 
-    bsal_event->band = band;
+    memset(bsal_event->data.connect.assoc_ies, 0, sizeof(bsal_event->data.connect.assoc_ies));
+    bsal_event->data.connect.assoc_ies_len = 0;
 
     switch (wifi_hal_event->type)
     {
@@ -173,27 +259,7 @@ static void process_event(
                &wifi_hal_event->data.connect.client_mac,
                sizeof(bsal_event->data.connect.client_addr));
 
-        bsal_event->data.connect.is_BTM_supported = wifi_hal_event->data.connect.isBTMSupported;
-        bsal_event->data.connect.is_RRM_supported = wifi_hal_event->data.connect.isRRMSupported;
-
-        bsal_event->data.connect.band_cap_2G = wifi_hal_event->data.connect.bandCap2G;
-        bsal_event->data.connect.band_cap_5G = wifi_hal_event->data.connect.bandCap5G;
-
-        bsal_event->data.connect.datarate_info.max_chwidth = wifi_hal_event->data.connect.datarateInfo.maxChwidth;
-        bsal_event->data.connect.datarate_info.max_streams = wifi_hal_event->data.connect.datarateInfo.maxStreams;
-        bsal_event->data.connect.datarate_info.phy_mode = wifi_hal_event->data.connect.datarateInfo.phyMode;
-        bsal_event->data.connect.datarate_info.max_MCS = wifi_hal_event->data.connect.datarateInfo.maxMCS;
-        bsal_event->data.connect.datarate_info.max_txpower = wifi_hal_event->data.connect.datarateInfo.maxTxpower;
-        bsal_event->data.connect.datarate_info.is_static_smps = wifi_hal_event->data.connect.datarateInfo.isStaticSmps;
-        bsal_event->data.connect.datarate_info.is_mu_mimo_supported = wifi_hal_event->data.connect.datarateInfo.isMUMimoSupported;
-
-        bsal_event->data.connect.rrm_caps.link_meas = wifi_hal_event->data.connect.rrmCaps.linkMeas;
-        bsal_event->data.connect.rrm_caps.neigh_rpt = wifi_hal_event->data.connect.rrmCaps.neighRpt;
-        bsal_event->data.connect.rrm_caps.bcn_rpt_passive = wifi_hal_event->data.connect.rrmCaps.bcnRptPassive;
-        bsal_event->data.connect.rrm_caps.bcn_rpt_active = wifi_hal_event->data.connect.rrmCaps.bcnRptActive;
-        bsal_event->data.connect.rrm_caps.bcn_rpt_table = wifi_hal_event->data.connect.rrmCaps.bcnRptTable;
-        bsal_event->data.connect.rrm_caps.lci_meas = wifi_hal_event->data.connect.rrmCaps.lciMeas;
-        bsal_event->data.connect.rrm_caps.ftm_range_rpt = wifi_hal_event->data.connect.rrmCaps.ftmRangeRpt;
+        bsal_client_info_update(&wifi_hal_event->data.connect);
         break;
 
     case WIFI_STEERING_EVENT_CLIENT_DISCONNECT:
@@ -220,6 +286,8 @@ static void process_event(
         bsal_event->data.disconnect.type = val;
 
         bsal_event->data.disconnect.reason = wifi_hal_event->data.disconnect.reason;
+
+        bsal_client_info_remove(wifi_hal_event->data.disconnect.client_mac);
         break;
 
     case WIFI_STEERING_EVENT_CLIENT_ACTIVITY:
@@ -858,39 +926,63 @@ error:
     return -1;
 }
 
-static bool bsal_client_is_connected(
+static bool bsal_client_set_connected(
         INT apIndex,
-        const uint8_t *mac_addr)
+        const uint8_t *mac_addr,
+        bsal_client_info_t *info)
 {
-    wifi_associated_dev2_t *clients = NULL;
+    wifi_associated_dev3_t *clients = NULL;
     UINT clients_num = 0;
     UINT i = 0;
     int ret = 0;
-    bool connected = false;
+#ifndef CONFIG_RDK_HAS_ASSOC_REQ_IES
+    bsal_client_info_cache_t *client_info_cache;
+#endif
 
-    ret = wifi_getApAssociatedDeviceDiagnosticResult2(apIndex, &clients, &clients_num);
+    ret = wifi_getApAssociatedDeviceDiagnosticResult3(apIndex, &clients, &clients_num);
     if (ret != RETURN_OK)
     {
-        LOGE("BSAL Failed to fetch clients associated with iface: %d (wifi_getApAssociatedDeviceDiagnosticResult2() "
+        LOGE("BSAL Failed to fetch clients associated with iface: %d (wifi_getApAssociatedDeviceDiagnosticResult3() "
              "failed with code %d)", apIndex, ret);
-        goto end;
+        goto error;
     }
 
     LOGI("BSAL Found %u clients associated with iface: %d", clients_num, apIndex);
 
+#ifndef CONFIG_RDK_HAS_ASSOC_REQ_IES
+    client_info_cache = bsal_find_client_info(mac_addr);
+#endif
     for (i = 0; i < clients_num; i++)
     {
         if (memcmp(mac_addr, &clients[i].cli_MACAddress, sizeof(clients[i].cli_MACAddress)) == 0)
         {
             LOGI("BSAL Client is "MAC_ADDR_FMT" is associated with iface: %d", MAC_ADDR_UNPACK(mac_addr), apIndex);
-            connected = true;
-            break;
+            info->connected = true;
+            info->snr = clients[i].cli_RSSI;
+            info->tx_bytes = clients[i].cli_BytesSent;
+            info->rx_bytes = clients[i].cli_BytesReceived;
+#ifndef CONFIG_RDK_HAS_ASSOC_REQ_IES
+            if (client_info_cache != NULL)
+            {
+                client_info_cache->client.connected = true;
+                client_info_cache->client.snr = clients[i].cli_RSSI;
+                client_info_cache->client.rx_bytes = clients[i].cli_BytesReceived;
+                client_info_cache->client.tx_bytes = clients[i].cli_BytesSent;
+                memcpy(info, &client_info_cache->client, sizeof(*info));
+            }
+#endif
+        }
+        else
+        {
+            info->connected = false;
         }
     }
 
-end:
+    return true;
+
+error:
     free(clients);
-    return connected;
+    return false;
 }
 
 int target_bsal_bss_tm_request(
@@ -984,17 +1076,27 @@ int target_bsal_rrm_beacon_report_request(
     req.mode = rrm_params->meas_mode;
     req.channel = rrm_params->channel;
     req.randomizationInterval = rrm_params->rand_ivl;
-    /*req.numRepetitions = 1;*/  // This field is not available in wifi_BeaconRequest_t
+    req.numRepetitions = 1;
     req.duration = rrm_params->meas_dur;
 
-    if (rrm_params->req_ssid != 2)
+    if (rrm_params->req_ssid == 1)
     {
-        LOGW( "BSAL Incorrect req_ssid: %d, expecting: 2", rrm_params->req_ssid);
-        goto error;
+        if (wifi_getSSIDName(iface->wifihal_cfg.apIndex, req.ssid) == RETURN_OK)
+        {
+            req.ssidPresent = 1;
+        }
+        else
+        {
+            req.ssidPresent = 0;
+            LOGW("BSAL unable to get SSID for iface: %s. Sent RRM request with wildcarded SSID", ifname);
+        }
     }
-
-    req.ssidPresent = 0;
     memset(req.bssid, 0xFF, sizeof(req.bssid));
+
+    LOGD("BSAL RRM Request opClass: %d, mode: %d, channel: %d, randomizationInterval: %d, numRepetitions: %d, "
+                          "duration: %d, ssidPresent: %d, bssid: "MAC_ADDR_FMT", ssid: %s",
+                          req.opClass, req.mode, req.channel, req.randomizationInterval, req.numRepetitions,
+                          req.duration, req.ssidPresent, MAC_ADDR_UNPACK(req.bssid), req.ssid);
 
     ret = wifi_setRMBeaconRequest(iface->wifihal_cfg.apIndex, (CHAR*) mac_addr, &req, &dia_token);
     if (ret != RETURN_OK)
@@ -1193,7 +1295,12 @@ int target_bsal_client_info(
 
     apIndex = iface->wifihal_cfg.apIndex;
 
-    info->connected = bsal_client_is_connected(apIndex, mac_addr);
+    memset(info, 0, sizeof(*info));
+
+    if (!bsal_client_set_connected(apIndex, mac_addr, info))
+    {
+        return -1;
+    }
 
 #ifdef CONFIG_RDK_HAS_ASSOC_REQ_IES
     if (!info->connected) return 0;

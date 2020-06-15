@@ -35,11 +35,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define TARGET_LOG_HAS_LEVEL
 #define TARGET_LOG_HAS_HOSTNAME
 
-#define TARGET_RUN_PATH             "/var/run/plume"
-#define TARGET_BIN_PATH             "/usr/plume/bin"
-#define TARGET_TOOLS_PATH           "/usr/plume/tools"
-#define TARGET_SCRIPTS_PATH         "/usr/plume/scripts"
-#define TARGET_CERT_PATH            "/usr/plume/etc/certs"
+#define TARGET_RUN_PATH             "/var/run/opensync"
+#define TARGET_BIN_PATH             "/usr/opensync/bin"
+#define TARGET_TOOLS_PATH           "/usr/opensync/tools"
+#define TARGET_SCRIPTS_PATH         "/usr/opensync/scripts"
+#define TARGET_CERT_PATH            "/usr/opensync/etc/certs"
 #define TARGET_MANAGERS_PID_PATH    TARGET_RUN_PATH
 #define TARGET_OVSDB_SOCK_PATH      "/var/run/openvswitch/db.sock"
 
@@ -52,7 +52,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /******************************************************************************
  *  MANAGERS definitions
  *****************************************************************************/
-#define TARGET_MANAGER_PATH(X)      "/usr/plume/bin/"X
+#define TARGET_MANAGER_PATH(X)      "/usr/opensync/bin/"X
 
 /******************************************************************************
  *  TARGET INIT options  - Managers specific to RDK platform
@@ -99,6 +99,7 @@ bool target_vif_config_get(char *ifname, struct schema_Wifi_VIF_Config *vconf);
 /******************************************************************************
  *  MAP definitions
  *****************************************************************************/
+bool            target_map_ifname_init(void);
 extern bool     target_map_update_vlan(const char *ifname, uint16_t vlan_id);
 extern char *   target_map_ifname_to_bridge(const char *ifname);
 extern char *   target_map_ifname_to_gre_bridge(const char *ifname);

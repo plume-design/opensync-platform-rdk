@@ -172,7 +172,7 @@ bool clients_hal_fetch_existing(unsigned int apIndex)
 #ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
     wifi_associated_dev4_t  *associated_dev = NULL;
 #else
-    wifi_associated_dev2_t  *associated_dev = NULL;
+    wifi_associated_dev3_t  *associated_dev = NULL;
 #endif
     os_macaddr_t             macaddr;
     UINT                     num_devices = 0;
@@ -193,7 +193,7 @@ bool clients_hal_fetch_existing(unsigned int apIndex)
 #ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
     ret = wifi_getApAssociatedDeviceDiagnosticResult4(apIndex, &associated_dev, &num_devices);
 #else
-    ret = wifi_getApAssociatedDeviceDiagnosticResult2(apIndex, &associated_dev, &num_devices);
+    ret = wifi_getApAssociatedDeviceDiagnosticResult3(apIndex, &associated_dev, &num_devices);
 #endif
 
     if (ret != RETURN_OK)

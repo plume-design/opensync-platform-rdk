@@ -27,10 +27,10 @@ UNIT_NAME := osync_hal
 UNIT_TYPE := LIB
 
 UNIT_DEPS := src/lib/common
+UNIT_DEPS += $(PLATFORM_DIR)/src/lib/devinfo
 
 UNIT_SRC := src/init.c
 UNIT_SRC += src/clients.c
-UNIT_SRC += src/dhcp.c
 UNIT_SRC += src/inet.c
 UNIT_SRC += src/devinfo.c
 UNIT_SRC += src/radio.c

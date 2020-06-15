@@ -162,11 +162,10 @@ static int wiifhal_sync_iface_mltype(int iface_type)
 
 static void resync_leases()
 {
-    if (osync_hal_dhcp_resync_all(dhcp_lease_upsert) != OSYNC_HAL_SUCCESS)
+    if (!dhcp_server_resync_all_leases())
     {
         LOGE("Failed to resync DHCP leases");
     }
-    dhcp_server_status_dispatch();
 }
 
 static void sync_process_msg(MeshSync *mp)

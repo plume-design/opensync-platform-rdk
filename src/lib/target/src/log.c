@@ -48,7 +48,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define LOG_TRIGGER_DIR     "/tmp/lm/trigger"
 #define LOG_STATE_FILE      "/nvram/lm_log_state.json"
-#define LOG_PULL_CMD        "/usr/plume/scripts/lm_log_pull.sh"
+#define LOG_PULL_CMD        "/usr/opensync/scripts/lm_log_pull.sh"
 
 /*****************************************************************************/
 
