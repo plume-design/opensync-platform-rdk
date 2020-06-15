@@ -24,20 +24,24 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
 #include <ctype.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <linux/limits.h>
 
 #include "log.h"
 #include "const.h"
 #include "target.h"
 #include "target_internal.h"
 #include "evsched.h"
+#include "util.h"
 
 #define MODULE_ID LOG_MODULE_ID_VIF
+#define MAX_MULTI_PSK_KEYS 30
 
 typedef enum
 {
@@ -154,6 +158,7 @@ static bool acl_to_state(
     }
     vstate->mac_list_type_exists = true;
 
+    memset(acl_buf, 0, sizeof(acl_buf));
     status = wifi_getApAclDevices(ssid_index, acl_buf, sizeof(acl_buf));
     if (status == RETURN_OK)
     {
@@ -346,6 +351,117 @@ static bool set_enterprise_credentials(
     return true;
 }
 
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+static bool vif_security_set_multi_psk_keys_from_conf(INT ssid_index, const struct schema_Wifi_VIF_Config *vconf)
+{
+    wifi_key_multi_psk_t *keys = NULL;
+    wifi_key_multi_psk_t *keys_it = NULL;
+    int keys_number = 0;
+    INT ret = 0;
+    int i = 0;
+
+    for (i = 0; i < vconf->security_len; i++)
+    {
+        if (!strncmp(vconf->security_keys[i], "key-", 4))
+        {
+               keys_number++;
+        }
+    }
+
+    keys = calloc(keys_number, sizeof(*keys));
+    if (keys == NULL)
+    {
+        LOGE("vif_security_set_multi_psk_keys_from_conf: Failed to allocate memory");
+        return false;
+    }
+
+    keys_it = keys;
+    for (i = 0; i < vconf->security_len; i++)
+    {
+       if (!strncmp(vconf->security_keys[i], "key-", 4))
+       {
+           STRSCPY(keys_it->wifi_keyId, vconf->security_keys[i]);
+           STRSCPY(keys_it->wifi_psk, vconf->security[i]);
+           // MAC set to 00:00:00:00:00:00
+           keys_it++;
+       }
+
+    }
+
+    ret = wifi_pushMultiPskKeys(ssid_index, keys, keys_number);
+
+    free(keys);
+    return ret == RETURN_OK;
+}
+
+static int vif_get_security_mult_psk_keys_state(INT ssid_index, struct schema_Wifi_VIF_State *vstate, int index)
+{
+    int ret = 0;
+    int i = 0;
+    wifi_key_multi_psk_t keys[MAX_MULTI_PSK_KEYS];
+
+    memset(keys, 0, sizeof(keys));
+
+    ret = wifi_getMultiPskKeys(ssid_index, keys, MAX_MULTI_PSK_KEYS);
+    if (ret != RETURN_OK) return index;
+
+    for (i = 0; i < MAX_MULTI_PSK_KEYS; i++)
+    {
+         if (strlen(keys[i].wifi_keyId) && strlen(keys[i].wifi_psk))
+         {
+             index = set_security_key_value(vstate, index, keys[i].wifi_keyId, keys[i].wifi_psk);
+         }
+    }
+
+    return index;
+}
+
+static bool vif_security_oftag_write(INT ssid_index, const struct schema_Wifi_VIF_Config *vconf)
+{
+    char fname[PATH_MAX];
+    char buf[4096];
+    char *pos = buf;
+    size_t len = sizeof(buf);
+    int i = 0;
+
+    memset(buf, 0, len);
+    snprintf(fname, sizeof(fname), "/tmp/plume/openflow%d.tags", ssid_index);
+
+    for (i = 0; i < vconf->security_len; i++)
+    {
+       if (!strncmp(vconf->security_keys[i], "oftag",5))
+       {
+           csnprintf(&pos, &len, "%s=%s\n", vconf->security_keys[i], vconf->security[i]);
+       }
+    }
+
+    return !(WARN_ON(file_put((const char *)fname, (const char *)buf) < 0));
+}
+
+static int vif_security_oftag_read(INT ssid_index, struct schema_Wifi_VIF_State *vstate, int index)
+{
+    char fname[PATH_MAX];
+    char *psks;
+    char *line;
+    const char *key;
+    const char *oftag;
+
+    snprintf(fname, sizeof(fname), "/tmp/plume/openflow%d.tags", ssid_index);
+    psks = file_geta(fname);
+    if (!psks) return index;
+
+    while ((line = strsep(&psks, "\t\r\n")))
+    {
+        if ((key = strsep(&line, "=")) && (oftag = strsep(&line, "")))
+        {
+            index = set_security_key_value(vstate, index, key, oftag);
+        }
+    }
+
+    return index;
+}
+#endif
+
 static bool set_enc_mode(
         struct schema_Wifi_VIF_State *vstate,
         INT ssid_index,
@@ -358,6 +474,12 @@ static bool set_enc_mode(
     index = set_security_key_value(vstate, index, OVSDB_SECURITY_ENCRYPTION, encryption);
 
     index = set_security_key_value(vstate, index, OVSDB_SECURITY_MODE, mode);
+
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+    index = vif_get_security_mult_psk_keys_state(ssid_index, vstate, index);
+
+    index = vif_security_oftag_read(ssid_index, vstate, index);
+#endif
 
     if (enterprise)
     {
@@ -1029,23 +1151,6 @@ static bool vif_ifname_to_idx(const char *ifname, INT *outSsidIndex)
     return true;
 }
 
-/* Returns true if any of the fields that need explicit applying changed */
-static bool should_apply(const struct schema_Wifi_VIF_Config_flags *changed)
-{
-    return (   changed->if_name
-            || changed->enabled
-            || changed->mode
-            || changed->ssid_broadcast
-            || changed->security
-            || changed->mac_list
-            || changed->mac_list_type
-            || changed->vlan_id
-            || changed->ap_bridge
-            || changed->rrm
-            || changed->btm
-           );
-}
-
 bool target_vif_config_set2(
         const struct schema_Wifi_VIF_Config *vconf,
         const struct schema_Wifi_Radio_Config *rconf,
@@ -1087,8 +1192,14 @@ bool target_vif_config_set2(
             }
             else
             {
-                LOGI("%s: Updated SSID Broadcast to %d", ssid_ifname, bval);
+                if (!sync_send_ssid_broadcast_change(ssid_index, bval))
+                {
+                    LOGW("%s: Failed to sync SSID Broadcast change to %s",
+                        ssid_ifname, (bval ? "true" : "false"));
+                }
             }
+
+            LOGI("%s: Updated SSID Broadcast to %d", ssid_ifname, bval);
         }
         else
         {
@@ -1126,20 +1237,10 @@ bool target_vif_config_set2(
         }
         else
         {
-            ret = wifi_pushSSID(ssid_index, tmp);
-            LOGD("[WIFI_HAL SET] wifi_pushSSID(%d, \"%s\") = %d",
-                    ssid_index, tmp, ret);
-            if (ret != RETURN_OK)
+            LOGI("%s: SSID updated to '%s'", ssid_ifname, tmp);
+            if (!sync_send_ssid_change(ssid_index, ssid_ifname, vconf->ssid))
             {
-                LOGW("%s: Failed to push new SSID '%s'", ssid_ifname, tmp);
-            }
-            else
-            {
-                LOGI("%s: SSID updated to '%s'", ssid_ifname, tmp);
-                if (!sync_send_ssid_change(ssid_index, ssid_ifname, vconf->ssid))
-                {
-                    LOGE("%s: Failed to sync SSID change to '%s'", ssid_ifname, vconf->ssid);
-                }
+                LOGE("%s: Failed to sync SSID change to '%s'", ssid_ifname, vconf->ssid);
             }
         }
     }
@@ -1147,6 +1248,17 @@ bool target_vif_config_set2(
 
     if (changed->security && vconf->security_len)
     {
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+        if (!vif_security_set_multi_psk_keys_from_conf(ssid_index, vconf))
+        {
+            LOGW("%s: Failed to set multi-psk config", ssid_ifname);
+        }
+
+        if (!vif_security_oftag_write(ssid_index, vconf))
+        {
+            LOGW("%s: Failed to save oftags", ssid_ifname);
+        }
+#endif
         memset(&sec, 0, sizeof(sec));
         if (!security_to_syncmsg(vconf, &sec))
         {
@@ -1229,12 +1341,9 @@ bool target_vif_config_set2(
         }
     }
 
-    if (should_apply(changed))
+    if (wifi_applySSIDSettings(ssid_index) != RETURN_OK)
     {
-        if (wifi_applySSIDSettings(ssid_index) != RETURN_OK)
-        {
-            LOGW("%s: Failed to apply SSID settings", ssid_ifname);
-        }
+        LOGW("%s: Failed to apply SSID settings", ssid_ifname);
     }
 
     return vif_state_update(ssid_index);

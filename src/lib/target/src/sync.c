@@ -683,7 +683,6 @@ bool sync_send_ssid_change(
 
     if (!sync_send_msg(&mmsg))
     {
-        // It reports error
         return false;
     }
 
@@ -758,5 +757,86 @@ bool sync_send_status(radio_cloud_mode_t mode)
 
     LOGN("MSGQ sent cloud mode status update (mode %d)\n",
          mmsg.data.wifiStatus.status);
+    return true;
+}
+
+bool sync_send_channel_change(
+        INT radio_index,
+        UINT channel)
+{
+    MeshSync        mmsg;
+
+    if (!sync_initialized)
+    {
+        LOGW("%d: Cannot send channel update -- sync not initialized", radio_index);
+        return false;
+    }
+
+    memset(&mmsg, 0, sizeof(mmsg));
+
+    mmsg.msgType = MESH_WIFI_RADIO_CHANNEL;
+    mmsg.data.wifiRadioChannel.index = radio_index;
+    mmsg.data.wifiRadioChannel.channel = channel;
+
+    if (!sync_send_msg(&mmsg))
+    {
+        return false;
+    }
+
+    LOGN("%d: MSGQ sent channel update to %u", radio_index, channel);
+    return true;
+}
+
+bool sync_send_ssid_broadcast_change(
+        INT ssid_index,
+        BOOL ssid_broadcast)
+{
+    MeshSync        mmsg;
+
+    if (!sync_initialized)
+    {
+        LOGW("%d: Cannot SSID Broadcast update -- sync not initialized", ssid_index);
+        return false;
+    }
+
+    memset(&mmsg, 0, sizeof(mmsg));
+
+    mmsg.msgType = MESH_WIFI_SSID_ADVERTISE;
+    mmsg.data.wifiSSIDAdvertise.index = ssid_index;
+    mmsg.data.wifiSSIDAdvertise.enable = ssid_broadcast;
+
+    if (!sync_send_msg(&mmsg))
+    {
+        return false;
+    }
+
+    LOGN("%d: MSGQ sent SSID broadcast update to %s", ssid_index, (ssid_broadcast ? "true" : "false"));
+    return true;
+}
+
+bool sync_send_channel_bw_change(
+        INT ssid_index,
+        UINT bandwidth)
+{
+    MeshSync        mmsg;
+
+    if (!sync_initialized)
+    {
+        LOGW("%d: Cannot channel bandwidth update -- sync not initialized", ssid_index);
+        return false;
+    }
+
+    memset(&mmsg, 0, sizeof(mmsg));
+
+    mmsg.msgType = MESH_WIFI_RADIO_CHANNEL_BW;
+    mmsg.data.wifiRadioChannelBw.index = ssid_index;
+    mmsg.data.wifiRadioChannelBw.bw = bandwidth;
+
+    if (!sync_send_msg(&mmsg))
+    {
+        return false;
+    }
+
+    LOGN("%d: MSGQ sent channel bandwidth update to %u MHz", ssid_index, bandwidth);
     return true;
 }

@@ -163,6 +163,16 @@ static bool radio_change_channel(
         return false;
     }
 
+    if (!sync_send_channel_change(radioIndex, channel))
+    {
+        LOGW("%d: Failed to sync channel change to %u", radioIndex, channel);
+    }
+
+    if (!sync_send_channel_bw_change(radioIndex, ch_width))
+    {
+        LOGW("%d: Failed to sync channel bandwidth change to %u MHz", radioIndex, ch_width);
+    }
+
     LOGI("%s: Started CSA to channel %d, width %d, tbtt %d",
          radio_ifname, channel, ch_width, CSA_TBTT);
 

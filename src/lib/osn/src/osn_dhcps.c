@@ -137,6 +137,7 @@ bool osn_dhcp_server_del(osn_dhcp_server_t *self)
 {
     ds_tree_iter_t iter;
     struct dhcp_range *dr;
+
     /* Free DHCP range list */
     ds_tree_foreach_iter(&self->ds_range_list, dr, &iter)
     {
@@ -357,7 +358,6 @@ static void dhcp_lease_add(osn_dhcp_server_t *self, struct osn_dhcp_server_lease
 
     /* Append to array */
     st->ds_leases[st->ds_leases_len++] = *dl;
-
 }
 
 /*

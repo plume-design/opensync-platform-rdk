@@ -39,7 +39,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*****************************************************************************/
 
 #define MODULE_ID                       LOG_MODULE_ID_HAL
-#define MACLEARN_BRIDGE                 CONFIG_LAN_BRIDGE_NAME
+#define MACLEARN_BRIDGE                 CONFIG_RDK_LAN_BRIDGE_NAME
 
 /*****************************************************************************/
 
@@ -47,8 +47,8 @@ static target_mac_learning_cb_t *g_maclearn_cb = NULL;
 
 static c_item_t map_ifname[] =
 {
-    C_ITEM_STR(MACLEARN_TYPE_ETH,           CONFIG_LAN_ETH_IFNAME),
-    C_ITEM_STR(MACLEARN_TYPE_MOCA,          CONFIG_MOCA_IFNAME),
+    C_ITEM_STR(MACLEARN_TYPE_ETH,           CONFIG_RDK_LAN_ETH_IFNAME),
+    C_ITEM_STR(MACLEARN_TYPE_MOCA,          CONFIG_RDK_MOCA_IFNAME),
 };
 
 /*****************************************************************************/
@@ -82,10 +82,21 @@ bool maclearn_update(maclearn_type_t type, const char *mac, bool connected)
     return true;
 }
 
+static void handle_client_fn(const osync_hal_clients_info_t *clients_info)
+{
+    if (clients_info->iface == OSYNC_HAL_IFACE_ETHERNET)
+    {
+        maclearn_update(MACLEARN_TYPE_ETH, clients_info->mac_str, true);
+    }
+}
+
 bool target_mac_learning_register(target_mac_learning_cb_t *maclearn_cb)
 {
     g_maclearn_cb = maclearn_cb;
     LOGN("OVS Mac Learning callback registered");
+
+    LOGI("Fetch connected clients");
+    osync_hal_fetch_connected_clients(handle_client_fn);
 
     return true;
 }

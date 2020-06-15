@@ -190,6 +190,9 @@ bool                 sync_send_ssid_change(INT ssid_index, const char *ssid_ifna
 bool                 sync_send_security_change(INT ssid_index, const char *ssid_ifname,
                                     MeshWifiAPSecurity *sec);
 bool                 sync_send_status(radio_cloud_mode_t mode);
+bool                 sync_send_channel_change(INT radio_index, UINT channel);
+bool                 sync_send_ssid_broadcast_change(INT ssid_index, BOOL ssid_broadcast);
+bool                 sync_send_channel_bw_change(INT ssid_index, UINT bandwidth);
 
 bool                 vif_state_update(INT ssidIndex);
 bool                 vif_state_get(INT ssidIndex, struct schema_Wifi_VIF_State *vstate);

@@ -52,7 +52,11 @@ static ds_tree_t            connected_clients;
 typedef struct
 {
     INT                     ssid_index;
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+    wifi_associated_dev4_t  sta;
+#else
     wifi_associated_dev_t   sta;
+#endif
 
     ds_dlist_node_t         node;
 } hal_cb_entry_t;
@@ -65,7 +69,11 @@ static int                  hal_cb_queue_len = 0;
 
 static struct target_radio_ops g_rops;
 
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+static INT clients_hal_assocdev_cb(INT ssid_index, wifi_associated_dev4_t *sta)
+#else
 static INT clients_hal_assocdev_cb(INT ssid_index, wifi_associated_dev_t *sta)
+#endif
 {
     hal_cb_entry_t      *cbe;
     INT                 ret = RETURN_ERR;
@@ -104,7 +112,11 @@ exit:
 
 static INT clients_hal_dissocdev_cb(INT ssid_index, char *mac, INT event_type)
 {
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+    wifi_associated_dev4_t sta;
+#else
     wifi_associated_dev_t sta;
+#endif
 
     memset(&sta, 0, sizeof(sta));
 
@@ -136,7 +148,11 @@ static void clients_hal_async_cb(EV_P_ ev_async *w, int revents)
 
         if (cbe->sta.cli_Active)
         {
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+            clients_connection(cbe->ssid_index, mac, cbe->sta.cli_MultiPskKeyID);
+#else
             clients_connection(cbe->ssid_index, mac, NULL);
+#endif
         }
         else
         {
@@ -153,7 +169,11 @@ static void clients_hal_async_cb(EV_P_ ev_async *w, int revents)
 
 bool clients_hal_fetch_existing(unsigned int apIndex)
 {
-    wifi_associated_dev3_t  *associated_dev = NULL;
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+    wifi_associated_dev4_t  *associated_dev = NULL;
+#else
+    wifi_associated_dev2_t  *associated_dev = NULL;
+#endif
     os_macaddr_t             macaddr;
     UINT                     num_devices = 0;
     ULONG                    i;
@@ -170,7 +190,11 @@ bool clients_hal_fetch_existing(unsigned int apIndex)
         return false;
     }
 
-    ret = wifi_getApAssociatedDeviceDiagnosticResult3(apIndex, &associated_dev, &num_devices);
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+    ret = wifi_getApAssociatedDeviceDiagnosticResult4(apIndex, &associated_dev, &num_devices);
+#else
+    ret = wifi_getApAssociatedDeviceDiagnosticResult2(apIndex, &associated_dev, &num_devices);
+#endif
 
     if (ret != RETURN_OK)
     {
@@ -185,7 +209,11 @@ bool clients_hal_fetch_existing(unsigned int apIndex)
         snprintf(mac, sizeof(mac), PRI(os_macaddr_lower_t), FMT(os_macaddr_t, macaddr));
 
         // Report connection
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+        clients_connection(apIndex, mac, associated_dev[i].cli_MultiPskKeyID);
+#else
         clients_connection(apIndex, mac, NULL);
+#endif
     }
     free(associated_dev);
 
@@ -228,7 +256,11 @@ bool clients_hal_init(const struct target_radio_ops *rops)
     ev_async_start(hal_cb_loop, &hal_cb_async);
 
     // Register callbacks (NOTE: calls callback from created pthread)
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+    wifi_newApAssociatedDevice_callback_register2(clients_hal_assocdev_cb);
+#else
     wifi_newApAssociatedDevice_callback_register(clients_hal_assocdev_cb);
+#endif
 
     wifi_apDisassociatedDevice_callback_register(clients_hal_dissocdev_cb);
 

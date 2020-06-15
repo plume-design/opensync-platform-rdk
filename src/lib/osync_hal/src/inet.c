@@ -74,12 +74,12 @@ osync_hal_return_t osync_hal_inet_get_iface_config(
         once = false;
     }
 
-    if (!strcmp(if_name, CONFIG_LAN_BRIDGE_NAME))
+    if (!strcmp(if_name, CONFIG_RDK_LAN_BRIDGE_NAME))
     {
         STRSCPY(config->inet_addr, home_ip_cached);
         STRSCPY(config->mac_str, home_mac_cached);
     }
-    else if (!strcmp(if_name, CONFIG_WAN_BRIDGE_NAME))
+    else if (!strcmp(if_name, CONFIG_RDK_WAN_BRIDGE_NAME))
     {
         STRSCPY(config->inet_addr, wan_ip_cached);
         STRSCPY(config->mac_str, wan_mac_cached);
@@ -87,7 +87,7 @@ osync_hal_return_t osync_hal_inet_get_iface_config(
     else
     {
         LOGE("Cannot get config for %s. Only %s and %s interfaces available", if_name,
-                CONFIG_LAN_BRIDGE_NAME, CONFIG_WAN_BRIDGE_NAME);
+                CONFIG_RDK_LAN_BRIDGE_NAME, CONFIG_RDK_WAN_BRIDGE_NAME);
         return OSYNC_HAL_FAILURE;
     }
 
@@ -306,12 +306,33 @@ osync_hal_return_t osync_hal_inet_destroy_gre(const char *if_name)
 
 
 #ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_INET_ADD_TO_BRIDGE
+static osync_hal_return_t osync_hal_is_ovs_bridge(const char *br_name)
+{
+    char cmd[256];
+    int rc;
+
+    snprintf(cmd, sizeof(cmd), "ovs-vsctl br-exists %s", br_name);
+    LOGD("%s: Checking bridge if ovs with \"%s\"", br_name, cmd);
+    rc = system(cmd);
+    if (!WIFEXITED(rc) || WEXITSTATUS(rc) != 0)
+        return OSYNC_HAL_FAILURE;
+
+    return OSYNC_HAL_SUCCESS;
+}
+
 osync_hal_return_t osync_hal_inet_add_to_bridge(
         const char *if_name,
         const char *br_name)
 {
     char cmd[256];
     int rc;
+
+    if (osync_hal_is_ovs_bridge(br_name) == OSYNC_HAL_SUCCESS)
+    {
+        // If bridge is ovs bridge then do nothing.
+        // Cloud controller will insert interface into the bridge.
+        return OSYNC_HAL_SUCCESS;
+    }
 
     memset(cmd, 0, sizeof(cmd));
 

@@ -5,26 +5,26 @@ menuconfig PLATFORM_IS_RDK
 
 if PLATFORM_IS_RDK
 
-config LAN_BRIDGE_NAME
+config RDK_LAN_BRIDGE_NAME
     string "LAN bridge name"
     default "br-home"
     help
         LAN bridge name that will be used
 
-config WAN_BRIDGE_NAME
+config RDK_WAN_BRIDGE_NAME
     string "WAN bridge name"
     default "br-wan"
     help
         WAN bridge name that will be used
 
-config LAN_ETH_IFNAME
+config RDK_LAN_ETH_IFNAME
     string "LAN ethernet interface name"
     default "eth0"
     help
         Interface name on which ethernet clients
         are connected
 
-config MOCA_IFNAME
+config RDK_MOCA_IFNAME
     string "MOCA interface name"
     default "moca0"
     help
@@ -36,6 +36,28 @@ config RDK_HEALTHCHECK_INTERVAL
     help
         The interval at which OpenSync will read Radio and VIF
         information to keep OVSDB state tables up-to-date.
+
+config RDK_HAS_ASSOC_REQ_IES
+    bool "The wifi_getAssociationReqIEs is implemented"
+    help
+        The wifi_getAssociationReqIEs() is a pending Wi-Fi HAL API.
+        If implemented, then Band Steering Manager can request
+        connected client's capabilities on demand.
+        Otherwise it will depend only on capabilities delivered with
+        a BS CONNECT event. If the event is missed for some reason,
+        the band steering manager will not have all the information
+        until the next CONNECT event.
+
+config RDK_MULTI_PSK_SUPPORT
+    bool "Multi-PSK support"
+    default n
+    help
+        This enables Multi-PSK support.
+        This feature depends on a set of new wifihal API functions:
+        wifi_newApAssociatedDevice_callback2(),
+        wifi_getApAssociatedDeviceDiagnosticResult4(),
+        wifi_pushMultiPskKeys(),
+        wifi_getMultiPskKeys()
 
 menuconfig DEFAULT_OSYNC_HAL
     bool "OSync HAL defaults"

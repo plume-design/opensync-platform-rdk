@@ -26,6 +26,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "target.h"
 
+#ifdef CONFIG_RDK_HAS_ASSOC_REQ_IES
+#include <endian.h>
+#include "bm_ieee80211.h"
+#endif
+
 /*****************************************************************************/
 
 #define WIFI_HAL_STR_LEN  64
@@ -853,50 +858,39 @@ error:
     return -1;
 }
 
-int target_bsal_client_is_connected(
-        const char *ifname,
+static bool bsal_client_is_connected(
+        INT apIndex,
         const uint8_t *mac_addr)
 {
-    const iface_t *iface = NULL;
     wifi_associated_dev2_t *clients = NULL;
     UINT clients_num = 0;
     UINT i = 0;
     int ret = 0;
-    int result = 0;  // Not connected
+    bool connected = false;
 
-    iface = group_get_iface_by_name(ifname);
-    if (iface == NULL)
-    {
-        LOGE("BSAL Unable check if client "MAC_ADDR_FMT" is connected (failed to find iface: %s)",
-             MAC_ADDR_UNPACK(mac_addr), ifname);
-        result = -1;
-        goto end;
-    }
-
-    ret = wifi_getApAssociatedDeviceDiagnosticResult2(iface->wifihal_cfg.apIndex, &clients, &clients_num);
+    ret = wifi_getApAssociatedDeviceDiagnosticResult2(apIndex, &clients, &clients_num);
     if (ret != RETURN_OK)
     {
-        LOGE("BSAL Failed to fetch clients associated with iface: %s (wifi_getApAssociatedDeviceDiagnosticResult2() "
-             "failed with code %d)", iface->bsal_cfg.ifname, ret);
-        result = -1;
+        LOGE("BSAL Failed to fetch clients associated with iface: %d (wifi_getApAssociatedDeviceDiagnosticResult2() "
+             "failed with code %d)", apIndex, ret);
         goto end;
     }
 
-    LOGI("BSAL Found %u clients associated with iface: %s", clients_num, iface->bsal_cfg.ifname);
+    LOGI("BSAL Found %u clients associated with iface: %d", clients_num, apIndex);
 
     for (i = 0; i < clients_num; i++)
     {
         if (memcmp(mac_addr, &clients[i].cli_MACAddress, sizeof(clients[i].cli_MACAddress)) == 0)
         {
-            LOGI("BSAL Client is "MAC_ADDR_FMT" is associated with iface: %s", MAC_ADDR_UNPACK(mac_addr), ifname);
-            result = 1;
+            LOGI("BSAL Client is "MAC_ADDR_FMT" is associated with iface: %d", MAC_ADDR_UNPACK(mac_addr), apIndex);
+            connected = true;
             break;
         }
     }
 
 end:
     free(clients);
-    return result;
+    return connected;
 }
 
 int target_bsal_bss_tm_request(
@@ -1018,54 +1012,237 @@ error:
     return -1;
 }
 
+#ifdef CONFIG_RDK_HAS_ASSOC_REQ_IES
+static int get_ht_mcs_max(uint32_t mcs_set)
+{
+    int i;
+
+    LOGD("HT mcs_set = %x\n", mcs_set);
+    // We don't handle mcs_set == 0. Just return 0 in that case.
+    for (i = 0; i < 32; i++)
+    {
+        // Shift right the mcs_set until no more bits
+        // are set. Amount of the shifts equals to
+        // the position of highest bit set to '1'. Position
+        // of highest '1' determines the max supported
+        // MCS. We check here only for 0-31 MCS set.
+        mcs_set = mcs_set >> 1;
+        if (mcs_set == 0) break;
+    }
+
+    return i;
+}
+
+static int get_vht_mcs_max(uint16_t rx_mcs_map)
+{
+    int i;
+    int max_mcs = 0;
+
+    for (i = 0; i < 8; i++)
+    {
+        switch (rx_mcs_map & 0x03)
+        {
+            case 0x00:
+                max_mcs = max_mcs < 7 ? 7 : max_mcs;
+                break;
+            case 0x01:
+                max_mcs = max_mcs < 8 ? 8 : max_mcs;
+                break;
+            case 0x02:
+                max_mcs = max_mcs < 9 ? 9 : max_mcs;
+                break;
+            default:
+                // Not supported or invalid
+                break;
+        }
+
+        rx_mcs_map = rx_mcs_map >> 2;
+    }
+
+    return max_mcs;
+}
+
+static int get_vht_nss_max(uint16_t rx_mcs_map)
+{
+    int i;
+    int number_of_spatial_streams = 0;
+
+    for (i = 0; i < 8; i++)
+    {
+        // Set number of spatial streams for highest found valid bit pair.
+        if ((rx_mcs_map & 0x03) != 0x03) number_of_spatial_streams = i + 1;
+        rx_mcs_map = rx_mcs_map >> 2;
+    }
+
+    return number_of_spatial_streams;
+}
+
+static void bm_parse_btm_supported(bsal_client_info_t *info, uint32_t ext_caps)
+{
+    // We only check the first 4 bytes from extended capabilities
+    info->is_BTM_supported = !!(ext_caps & IEEE80211_EXTCAPIE_BSSTRANSITION);
+}
+
+static void bm_parse_rrm_supported(bsal_client_info_t *info, uint8_t rm_cap_oct1,
+                                uint8_t rm_cap_oct2, uint8_t rm_cap_oct5)
+{
+    info->is_RRM_supported = true;
+    info->rrm_caps.link_meas = !!(rm_cap_oct1 & IEEE80211_RRM_CAPS_LINK_MEASUREMENT);
+    info->rrm_caps.neigh_rpt = !!(rm_cap_oct1 & IEEE80211_RRM_CAPS_NEIGHBOR_REPORT);
+    info->rrm_caps.bcn_rpt_passive = !!(rm_cap_oct1 & IEEE80211_RRM_CAPS_BEACON_REPORT_PASSIVE);
+    info->rrm_caps.bcn_rpt_active = !!(rm_cap_oct1 & IEEE80211_RRM_CAPS_BEACON_REPORT_ACTIVE);
+    info->rrm_caps.bcn_rpt_table = !!(rm_cap_oct1 & IEEE80211_RRM_CAPS_BEACON_REPORT_TABLE);
+    info->rrm_caps.lci_meas = !!(rm_cap_oct2 & IEEE80211_RRM_CAPS_LCI_MEASUREMENT);
+    info->rrm_caps.ftm_range_rpt = !!(rm_cap_oct5 & IEEE80211_RRM_CAPS_FTM_RANGE_REPORT);
+}
+
+static void bm_parse_ht_cap(bsal_client_info_t *info, uint16_t ht_cap_info, uint32_t mcs_set)
+{
+    int ht_mcs_max;
+    int ht_nss_max;
+
+    if ((ht_cap_info & IEEE80211_HTCAP_C_CHWIDTH40) && (info->datarate_info.max_chwidth == 0))
+    {
+        info->datarate_info.max_chwidth = 1;  // 40 MHz
+    }
+
+    ht_mcs_max = get_ht_mcs_max(mcs_set);
+    ht_nss_max = ht_mcs_max / 8 + 1;
+
+    if (info->datarate_info.max_MCS < ht_mcs_max)
+    {
+        info->datarate_info.max_MCS = ht_mcs_max % 8;  // we always normalize to VHT
+    }
+
+    if (info->datarate_info.max_streams < ht_nss_max)
+    {
+        info->datarate_info.max_streams = ht_nss_max;
+    }
+
+    // If SMPS is set to 0 it means "Capable of SM Power Save (Static)"
+    info->datarate_info.is_static_smps =
+        (ht_cap_info & IEEE80211_HTCAP_C_SM_MASK) == 0x00 ? 1 : 0;
+}
+
+static void bm_parse_pwr_cap(bsal_client_info_t *info, uint8_t max_tx_power)
+{
+    info->datarate_info.max_txpower = max_tx_power;
+}
+
+static void bm_parse_vht_cap(bsal_client_info_t *info, uint32_t vht_info, uint16_t rx_mcs_map)
+{
+    int vht_max;
+    int nss_max;
+
+    info->datarate_info.max_chwidth = 2;  // 80 MHz
+    if (vht_info & IEEE80211_VHTCAP_SHORTGI_160)
+    {
+        info->datarate_info.max_chwidth = 3;  // 160 MHz
+    }
+
+    vht_max = get_vht_mcs_max(rx_mcs_map);
+    nss_max = get_vht_nss_max(rx_mcs_map);
+
+    if (info->datarate_info.max_MCS < vht_max)
+    {
+        info->datarate_info.max_MCS = vht_max;
+    }
+    if (info->datarate_info.max_streams < nss_max)
+    {
+        info->datarate_info.max_streams = nss_max;
+    }
+
+    info->datarate_info.is_mu_mimo_supported = !!(vht_info & IEEE80211_VHTCAP_MU_BFORMEE);
+}
+
+static void set_client_legacy(bsal_client_info_t *info)
+{
+    // The 2.4/5G capabilities are tracked by BM based on probe request.
+    // Don't set it here. The phy_mode is also not set, as it can be calculated
+    // by the cloud if max BW, MCS and NSS are provided.
+    // Besides that, assume it is a legacy client. If capabilities are discovered,
+    // they will overwrite the below defaults. The NSS is set to '0' for legacy clients.
+    info->is_BTM_supported = 0;
+    info->is_RRM_supported = 0;
+    memset(&info->datarate_info, 0, sizeof(info->datarate_info));
+    memset(&info->rrm_caps, 0, sizeof(info->rrm_caps));
+}
+#endif
+
 int target_bsal_client_info(
         const char *ifname,
         const uint8_t *mac_addr,
         bsal_client_info_t *info)
 {
-    wifi_associated_dev3_t  *associated_dev = NULL;
-    UINT                     num_devices = 0;
-    INT                      ret;
-    INT                      apIndex;
-    ULONG                    i;
-    char                     mac[MAC_STR_LEN];
-    os_macaddr_t             macaddr;
-    CHAR                     ifname_temp[BSAL_IFNAME_LEN];
+    const iface_t *iface = NULL;
+    INT apIndex;
+#ifdef CONFIG_RDK_HAS_ASSOC_REQ_IES
+    const struct element *elem;
+    INT ret;
+    CHAR req_ies[1024];
+    UINT req_ies_len;
+#endif
 
-    memset(ifname_temp, 0, sizeof(ifname_temp));
-    // RDK Wifi HAL discards the 'const', so the copy is to avoid warnings
-    STRSCPY(ifname_temp, ifname);
-
-    ret = wifi_getApIndexFromName(ifname_temp, &apIndex);
-    if (ret != RETURN_OK)
+    iface = group_get_iface_by_name(ifname);
+    if (iface == NULL)
     {
-        LOGE("%s: Cannot get Ap Index", ifname);
+        LOGE("BSAL Unable to check client "MAC_ADDR_FMT" info (failed to find iface: %s)",
+             MAC_ADDR_UNPACK(mac_addr), ifname);
         return -1;
     }
 
-    ret = wifi_getApAssociatedDeviceDiagnosticResult3(apIndex, &associated_dev, &num_devices);
+    apIndex = iface->wifihal_cfg.apIndex;
+
+    info->connected = bsal_client_is_connected(apIndex, mac_addr);
+
+#ifdef CONFIG_RDK_HAS_ASSOC_REQ_IES
+    if (!info->connected) return 0;
+
+    memset(req_ies, 0, sizeof(req_ies));
+    ret = wifi_getAssociationReqIEs(apIndex, (const mac_address_t *)mac_addr,
+            req_ies, sizeof(req_ies), &req_ies_len);
     if (ret != RETURN_OK)
     {
-        LOGE("%s: Failed to fetch associated devices", ifname);
+        LOGE("Cannot get association request IEs for MAC %02x:%02x:%02x:%02x:%02x:%02x on apIndex = %d",
+             mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5], apIndex);
         return -1;
     }
-    LOGD("%s: Found %u existing associated clients %d", ifname, num_devices, apIndex);
 
-    for (i = 0; i < num_devices; i++)
+    if (req_ies_len > sizeof(info->assoc_ies))
     {
-        ret = memcmp(mac_addr, associated_dev[i].cli_MACAddress, BSAL_MAC_ADDR_LEN);
-        if (ret == 0)
-        {
-            memcpy(&macaddr, associated_dev[i].cli_MACAddress, sizeof(macaddr));
-            snprintf(mac, sizeof(mac), PRI(os_macaddr_lower_t), FMT(os_macaddr_t, macaddr));
-            LOGD("%s: Client %s is connected", ifname_temp, mac);
-            info->connected = true;
-            goto exit;
+        LOGE("%s: The IEs are too big: %d (max: %d)",
+             __func__, req_ies_len, (int)sizeof(info->assoc_ies));
+        return -1;
+    }
+
+    memcpy(info->assoc_ies, req_ies, req_ies_len);
+    info->assoc_ies_len = req_ies_len;
+
+    set_client_legacy(info);
+
+    for_each_element(elem, req_ies, req_ies_len) {
+        switch (elem->id) {
+            case WLAN_EID_EXT_CAPAB:
+                bm_parse_btm_supported(info, le32toh(*(uint32_t *)elem->data));
+                break;
+            case WLAN_EID_RRM_ENABLED_CAPABILITIES:
+                bm_parse_rrm_supported(info, elem->data[0], elem->data[1], elem->data[4]);
+                break;
+            case WLAN_EID_HT_CAP:
+                bm_parse_ht_cap(info, le16toh(*(uint16_t *)elem->data),
+                    le32toh(*(uint32_t *)&elem->data[3]));
+                break;
+            case WLAN_EID_VHT_CAP:
+                bm_parse_vht_cap(info, le32toh(*(uint32_t *)elem->data), le16toh(*(uint16_t*)&elem->data[4]));
+                break;
+            case WLAN_EID_PWR_CAPABILITY:
+                bm_parse_pwr_cap(info, elem->data[1]);
+                break;
+            default:
+                break;
         }
     }
-    info->connected = false;
+#endif
 
-exit:
-    free(associated_dev);
     return 0;
 }
