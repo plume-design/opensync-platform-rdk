@@ -958,14 +958,14 @@ static bool bsal_client_set_connected(
         {
             LOGI("BSAL Client is "MAC_ADDR_FMT" is associated with iface: %d", MAC_ADDR_UNPACK(mac_addr), apIndex);
             info->connected = true;
-            info->snr = clients[i].cli_RSSI;
+            info->snr = clients[i].cli_SNR;
             info->tx_bytes = clients[i].cli_BytesSent;
             info->rx_bytes = clients[i].cli_BytesReceived;
 #ifndef CONFIG_RDK_HAS_ASSOC_REQ_IES
             if (client_info_cache != NULL)
             {
                 client_info_cache->client.connected = true;
-                client_info_cache->client.snr = clients[i].cli_RSSI;
+                client_info_cache->client.snr = clients[i].cli_SNR;
                 client_info_cache->client.rx_bytes = clients[i].cli_BytesReceived;
                 client_info_cache->client.tx_bytes = clients[i].cli_BytesSent;
                 memcpy(info, &client_info_cache->client, sizeof(*info));

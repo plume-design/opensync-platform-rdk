@@ -17,6 +17,18 @@ config RDK_WAN_BRIDGE_NAME
     help
         WAN bridge name that will be used
 
+config RDK_BHAUL_24_IFNAME
+    string "Backhaul AP 2.4 GHz interface name"
+    default "bhaul-ap-24"
+    help
+        Backhaul AP 2.4 GHz name that will be used
+
+config RDK_BHAUL_50_IFNAME
+    string "Backhaul AP 5 GHz interface name"
+    default "bhaul-ap-50"
+    help
+        Backhaul AP 5 GHz name that will be used
+
 config RDK_LAN_ETH_IFNAME
     string "LAN ethernet interface name"
     default "eth0"

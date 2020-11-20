@@ -1,0 +1,13 @@
+token=0x1
+requestMode=0x05
+timer=0x32
+validityInterval=0xc8
+termDuration.tsf=0
+termDuration.duration=0
+numCandidates=1
+bssid=e4:57:40:b3:21:56
+info=0x01
+opClass=0x73
+channel=112
+phyTable=0x09
+preference=1

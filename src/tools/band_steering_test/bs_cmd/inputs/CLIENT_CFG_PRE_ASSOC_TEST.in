@@ -1,0 +1,8 @@
+rssiProbeHWM=35
+rssiProbeLWM=20
+rssiAuthHWM=35
+rssiAuthLWM=20
+rssiInactXing=0
+rssiHighXing=35
+rssiLowXing=20
+authRejectReason=0

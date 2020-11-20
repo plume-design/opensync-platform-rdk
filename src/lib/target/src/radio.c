@@ -693,7 +693,9 @@ bool target_radio_config_set2(
         }
     }
 
-    return radio_state_update(radioIndex);
+
+    radio_trigger_resync();
+    return true;
 }
 
 static void radio_resync_all_task(void *arg)

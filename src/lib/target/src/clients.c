@@ -134,6 +134,7 @@ static void clients_hal_async_cb(EV_P_ ev_async *w, int revents)
     hal_cb_entry_t      *cbe;
     os_macaddr_t        macaddr;
     char                mac[20];
+    char                ifname[256];
 
     pthread_mutex_lock(&hal_cb_lock);
 
@@ -145,6 +146,24 @@ static void clients_hal_async_cb(EV_P_ ev_async *w, int revents)
 
         memcpy(&macaddr, cbe->sta.cli_MACAddress, sizeof(macaddr));
         snprintf(mac, sizeof(mac), PRI(os_macaddr_lower_t), FMT(os_macaddr_t, macaddr));
+
+        memset(ifname, 0, sizeof(ifname));
+        if (wifi_getApName(cbe->ssid_index, ifname) != RETURN_OK)
+        {
+            LOGE("%s: cannot get AP name for index %d", __func__, cbe->ssid_index);
+            free(cbe);
+            cbe = ds_dlist_inext(&qiter);
+            continue;
+        }
+
+        // Filter SSID's that we don't have mappings for
+        if (!target_unmap_ifname_exists(ifname))
+        {
+            free(cbe);
+            cbe = ds_dlist_inext(&qiter);
+            LOGD("Skipping client '%s' for '%s' (iface not mapped)", mac, ifname);
+            continue;
+        }
 
         if (cbe->sta.cli_Active)
         {
@@ -351,7 +370,8 @@ void clients_connection(
     }
     else
     {
-        LOGI("%s: Client '%s' re-connected", ifname, client->mac);
+        LOGT("%s: Client '%s' already connected", ifname, client->mac);
+        return;
     }
 
     if (key_id != NULL)
@@ -383,15 +403,24 @@ void clients_disconnection(INT apIndex, char *mac)
     }
 
     client = ds_tree_find(&connected_clients, mac);
-    if (client && client->apIndex != apIndex)
+    if (client)
     {
-        LOGI("%s: Client '%s' disconnect ignored (active on %d)",
-             ifname, client->mac, client->apIndex);
+        if (client->apIndex != apIndex)
+        {
+            LOGI("%s: Client '%s' disconnect ignored (active on %d)",
+                    ifname, client->mac, client->apIndex);
+            return;
+        }
+
+        LOGI("%s: Client disconnected (%s)", ifname, mac);
+        clients_update(ifname, mac, client ? client->key_id : NULL, false);
+        ds_tree_remove(&connected_clients, client);
+        free(client);
         return;
     }
 
-    LOGI("%s: Client disconnected (%s)", ifname, mac);
-    clients_update(ifname, mac, client ? client->key_id : NULL, false);
+    LOGI("%s: Client '%s; disconnect cb received, but client is not tracked, ignoring",
+            ifname, mac);
 
     return;
 }

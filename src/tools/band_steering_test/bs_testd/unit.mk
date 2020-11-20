@@ -1,5 +1,5 @@
-# Copyright (c) 2017, Plume Design Inc. All rights reserved.
-# 
+# Copyright (c) 2020, Plume Design Inc. All rights reserved.
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #    1. Redistributions of source code must retain the above copyright
@@ -10,7 +10,7 @@
 #    3. Neither the name of the Plume Design Inc. nor the
 #       names of its contributors may be used to endorse or promote products
 #       derived from this software without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 # ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 # WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -24,22 +24,16 @@
 
 ##############################################################################
 #
-# pl2rl - OpenSync Logger to RDK Logger Library
+# Band Steering test daemon
 #
 ##############################################################################
 
-UNIT_NAME := pl2rl
-UNIT_TYPE := LIB
+UNIT_NAME := bs_testd
 
-ifneq ($(RDK_LOGGER),1)
-UNIT_DISABLE := y
-endif
+UNIT_DISABLE := n
 
-UNIT_SRC    := pl2rl.c
+UNIT_DIR := tools
 
-UNIT_CFLAGS := -I$(UNIT_PATH)/inc
-UNIT_EXPORT_CFLAGS := $(UNIT_CFLAGS)
-UNIT_DEPS := src/lib/log
+UNIT_TYPE := BIN
 
-# Don't want this exported
-UNIT_CFLAGS += -Isrc/lib/log/inc -Isrc/lib/ds/inc
+UNIT_SRC := bs_testd.c

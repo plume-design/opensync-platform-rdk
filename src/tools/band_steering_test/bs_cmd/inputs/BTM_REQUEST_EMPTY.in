@@ -1,0 +1,7 @@
+token=0x1
+requestMode=0x07
+timer=0
+validityInterval=0xFF
+termDuration.tsf=0
+termDuration.duration=0
+numCandidates=0

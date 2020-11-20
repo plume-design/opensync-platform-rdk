@@ -43,24 +43,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define MODULE_ID LOG_MODULE_ID_VIF
 #define MAX_MULTI_PSK_KEYS 30
 
-typedef enum
-{
-    HW_MODE_11B         = 0,
-    HW_MODE_11G,
-    HW_MODE_11A,
-    HW_MODE_11N,
-    HW_MODE_11AC
-} hw_mode_t;
-
-static c_item_t map_hw_mode[] =
-{
-    C_ITEM_STR(HW_MODE_11B,             "11b"),
-    C_ITEM_STR(HW_MODE_11G,             "11g"),
-    C_ITEM_STR(HW_MODE_11A,             "11a"),
-    C_ITEM_STR(HW_MODE_11N,             "11n"),
-    C_ITEM_STR(HW_MODE_11AC,            "11ac")
-};
-
 static c_item_t map_enable_disable[] =
 {
     C_ITEM_STR(true,                    "enabled"),
@@ -195,7 +177,7 @@ static bool acl_to_state(
     return true;
 }
 
-static bool acl_apply(
+static void acl_apply(
         INT ssid_index,
         const char *ssid_ifname,
         const struct schema_Wifi_VIF_Config *vconf)
@@ -210,7 +192,7 @@ static bool acl_apply(
     if (!strncmp(ssid_ifname, "home-ap-", 8))
     {
         // Don't touch ACL
-        return true;
+        return;
     }
 
     // Set ACL type from mac_list_type
@@ -218,9 +200,9 @@ static bool acl_apply(
     {
         if (!(citem = c_get_item_by_str(map_acl_modes, vconf->mac_list_type)))
         {
-            LOGE("%s: Failed to set ACL type (mac_list_type '%s' unknown)",
+            LOGW("%s: Failed to set ACL type (mac_list_type '%s' unknown)",
                  ssid_ifname, vconf->mac_list_type);
-            return false;
+            return;
         }
         acl_mode = (INT)citem->key;
 
@@ -229,8 +211,8 @@ static bool acl_apply(
                                               ssid_index, acl_mode, ret);
         if (ret != RETURN_OK)
         {
-            LOGE("%s: Failed to set ACL Mode (%d)", ssid_ifname, acl_mode);
-            return false;
+            LOGW("%s: Failed to set ACL Mode (%d)", ssid_ifname, acl_mode);
+            return;
         }
     }
 
@@ -253,8 +235,6 @@ static bool acl_apply(
             }
         }
     }
-
-    return true;
 }
 
 static const char* security_conf_find_by_key(
@@ -835,11 +815,6 @@ bool vif_copy_to_config(
     LOGT("vconf->mode = %s", vconf->mode);
     SCHEMA_SET_INT(vconf->enabled, vstate->enabled);
     LOGT("vconf->enabled = %d", vconf->enabled);
-    if (vstate->bridge_exists)
-    {
-        SCHEMA_SET_STR(vconf->bridge, vstate->bridge);
-    }
-    LOGT("vconf->bridge = %s", vconf->bridge);
     if (vstate->vlan_id_exists)
     {
         SCHEMA_SET_INT(vconf->vlan_id, vstate->vlan_id);
@@ -853,8 +828,6 @@ bool vif_copy_to_config(
     LOGT("vconf->vif_radio_idx = %d", vconf->vif_radio_idx);
     SCHEMA_SET_STR(vconf->ssid_broadcast, vstate->ssid_broadcast);
     LOGT("vconf->ssid_broadcast = %s", vconf->ssid_broadcast);
-    SCHEMA_SET_STR(vconf->min_hw_mode, vstate->min_hw_mode);
-    LOGT("vconf->min_hw_mode = %s", vconf->min_hw_mode);
     SCHEMA_SET_STR(vconf->ssid, vstate->ssid);
     LOGT("vconf->ssid = %s", vconf->ssid);
     SCHEMA_SET_INT(vconf->rrm, vstate->rrm);
@@ -917,14 +890,11 @@ bool vif_state_get(
 {
     ULONG                           lval;
     CHAR                            buf[WIFIHAL_MAX_BUFFER];
-    CHAR                            tmp[WIFIHAL_MAX_BUFFER];
-    BOOL                            bval, gOnly, nOnly, acOnly;
-    hw_mode_t                       min_hw_mode;
+    BOOL                            bval;
     char                            *str;
     INT                             ret;
     INT                             radio_idx;
     char                            ssid_ifname[128];
-    char                            band[128];
     BOOL                            rrm;
     BOOL                            btm;
 
@@ -949,18 +919,6 @@ bool vif_state_get(
 
     // enabled (w/ exists)
     SCHEMA_SET_INT(vstate->enabled, vif_is_enabled(ssidIndex));
-
-    // bridge (w/ exists)
-    memset(buf, 0, sizeof(buf));
-    ret = wifi_getApBridgeInfo(ssidIndex, buf, tmp, tmp);
-    if (ret == RETURN_OK)
-    {
-        SCHEMA_SET_STR(vstate->bridge, buf);
-    } else
-    {
-        LOGW("Cannot getApBridgeInfo for SSID index %d", ssidIndex);
-        vstate->bridge_exists = false;
-    }
 
     // vlan_id (w/ exists)
     SCHEMA_SET_INT(vstate->vlan_id, target_map_ifname_to_vlan(vstate->if_name));
@@ -1034,54 +992,6 @@ bool vif_state_get(
     {
         LOGE("%s: cannot get radio idx for SSID %s\n", __func__, ssid_ifname);
         return false;
-    }
-
-    memset(band, 0, sizeof(band));
-    ret = wifi_getRadioOperatingFrequencyBand(radio_idx, band);
-    if (ret != RETURN_OK)
-    {
-        LOGE("%s: cannot get radio band for idx %d", __func__, radio_idx);
-        return false;
-    }
-
-    // min_hw_mode (w/ exists)
-    if (band[0] == '5')
-    {
-        min_hw_mode = HW_MODE_11A;
-    } else
-    {
-        min_hw_mode = HW_MODE_11B;
-    }
-    ret = wifi_getRadioStandard(radio_idx, buf, &gOnly, &nOnly, &acOnly);
-    if (ret != RETURN_OK)
-    {
-        LOGW("%s: Failed to get min_hw_mode from %d", ssid_ifname, radio_idx);
-    }
-    else
-    {
-        if (gOnly)
-        {
-            min_hw_mode = HW_MODE_11G;
-        }
-        else if (nOnly)
-        {
-            min_hw_mode = HW_MODE_11N;
-        }
-        else if (acOnly)
-        {
-            min_hw_mode = HW_MODE_11AC;
-        }
-    }
-
-    str = c_get_str_by_key(map_hw_mode, min_hw_mode);
-    if (strlen(str) == 0)
-    {
-        LOGW("%s: failed to encode min_hw_mode (%d)",
-             ssid_ifname, min_hw_mode);
-    }
-    else
-    {
-        SCHEMA_SET_STR(vstate->min_hw_mode, str);
     }
 
     // SSID (w/ exists)
@@ -1204,11 +1114,7 @@ bool target_vif_config_set2(
         return false;
     }
 
-    if (!acl_apply(ssid_index, ssid_ifname, vconf))
-    {
-        LOGE("%s: cannot apply ACL for %s", __func__, ssid_ifname);
-        return false;
-    }
+    acl_apply(ssid_index, ssid_ifname, vconf);
 
     if (changed->ssid_broadcast)
     {

@@ -177,6 +177,7 @@ static void sync_process_msg(MeshSync *mp)
     char                            radio_ifname[128];
     char                            ssid_ifname[128];
     int                             mltype;
+    bool                            resync = false;
 
 
 #define MK_SSID_IFNAME(idx)     do { \
@@ -195,6 +196,7 @@ static void sync_process_msg(MeshSync *mp)
                                     LOGD("Sync Received message '%s' from Mesh-Agent", \
                                          sync_message_name(mp->msgType))
 
+    LOGD("Received MeshAgent message: %s", sync_message_name(mp->msgType));
     switch (mp->msgType)
     {
 
@@ -214,6 +216,7 @@ static void sync_process_msg(MeshSync *mp)
             {
                 LOGE("Cannot update config table for SSID: %s", mp->data.wifiSSIDName.ssid);
             }
+            resync = true;
             break;
 
         case MESH_WIFI_AP_SECURITY:
@@ -235,6 +238,7 @@ static void sync_process_msg(MeshSync *mp)
             {
                 LOGE("Cannot update config table for SSID: %s", mp->data.wifiSSIDName.ssid);
             }
+            resync = true;
             break;
 
         case MESH_WIFI_AP_ADD_ACL_DEVICE:
@@ -247,6 +251,7 @@ static void sync_process_msg(MeshSync *mp)
                 break;
             }
             LOGI("... %s added '%s' to ACL", ssid_ifname, mp->data.wifiAPAddAclDevice.mac);
+            resync = true;
             break;
 
         case MESH_WIFI_AP_DEL_ACL_DEVICE:
@@ -259,6 +264,7 @@ static void sync_process_msg(MeshSync *mp)
                 break;
             }
             LOGI("... %s deleted '%s' from ACL", ssid_ifname, mp->data.wifiAPDelAclDevice.mac);
+            resync = true;
             break;
 
         case MESH_WIFI_MAC_ADDR_CONTROL_MODE:
@@ -274,6 +280,7 @@ static void sync_process_msg(MeshSync *mp)
                     ssid_ifname,
                     mp->data.wifiMacAddrControlMode.isEnabled ? "true" : "false",
                     mp->data.wifiMacAddrControlMode.isBlacklist ? "true" : "false");
+            resync = true;
             break;
 
         case MESH_WIFI_SSID_ADVERTISE:
@@ -288,6 +295,7 @@ static void sync_process_msg(MeshSync *mp)
             LOGI("... %s SSID advertise now '%s'",
                     ssid_ifname,
                     mp->data.wifiSSIDAdvertise.enable ? "true" : "false");
+            resync = true;
             break;
 
         case MESH_URL_CHANGE:
@@ -299,6 +307,7 @@ static void sync_process_msg(MeshSync *mp)
         case MESH_WIFI_RESET:
             BREAK_IF_NOT_MGR(WM);
             LOGI("... Wifi Reset '%s'", mp->data.wifiReset.reset ? "true" : "false");
+            resync = true;
             break;
 
         case MESH_SUBNET_CHANGE:
@@ -317,6 +326,7 @@ static void sync_process_msg(MeshSync *mp)
                 break;
             }
             LOGI("... %s: Kick all devices", ssid_ifname);
+            resync = true;
             break;
 
         case MESH_WIFI_AP_KICK_ASSOC_DEVICE:
@@ -329,6 +339,7 @@ static void sync_process_msg(MeshSync *mp)
                 break;
             }
             LOGI("... %s: Kick device '%s'", ssid_ifname, mp->data.wifiAPKickAssocDevice.mac);
+            resync = true;
             break;
 
         case MESH_WIFI_RADIO_CHANNEL:
@@ -342,6 +353,7 @@ static void sync_process_msg(MeshSync *mp)
                 break;
             }
             LOGI("... %s: changed channel to %d", radio_ifname, mp->data.wifiRadioChannel.channel);
+            resync = true;
             break;
 
         case MESH_WIFI_RADIO_CHANNEL_MODE:
@@ -360,6 +372,7 @@ static void sync_process_msg(MeshSync *mp)
                     mp->data.wifiRadioChannelMode.gOnlyFlag ? "true" : "false",
                     mp->data.wifiRadioChannelMode.nOnlyFlag ? "true" : "false",
                     mp->data.wifiRadioChannelMode.acOnlyFlag ? "true" : "false");
+            resync = true;
             break;
 
         case MESH_STATE_CHANGE:
@@ -464,8 +477,9 @@ static void sync_process_msg(MeshSync *mp)
     }
 #undef MK_SSID_IFNAME
 #undef MK_RADIO_IFNAME
-    if (sync_mgr == SYNC_MGR_WM)
+    if (sync_mgr == SYNC_MGR_WM && resync == true)
     {
+        LOGD("Re-sync triggered by MeshAgent");
         radio_trigger_resync();
     }
 

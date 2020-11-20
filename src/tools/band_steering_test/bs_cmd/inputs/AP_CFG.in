@@ -1,0 +1,5 @@
+apIndex=0
+utilCheckIntervalSec=0
+utilAvgCount=0
+inactCheckIntervalSec=10
+inactCheckThresholdSec=60

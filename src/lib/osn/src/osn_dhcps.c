@@ -392,7 +392,7 @@ static bool dhcp_server_lease_parse_line(struct osn_dhcp_server_lease *dl, const
      * Regular expression to match a line in the "dhcp.lease" file of the
      * following format:
      *
-     * 1461412276 f4:09:d8:89:54:4f 192.168.0.181 android-c992b284e24fdd69 1,33,3,6,15,28,51,58,59 01:f4:09:d8:89:54:4f
+     * 1461412276 f4:09:d8:89:54:4f 192.168.0.181 android-c992b284e24fdd69 1,33,3,6,15,28,51,58,59 "*" 01:f4:09:d8:89:54:4f
      */
     static const char dnsmasq_lease_parse_re[] =
         "(^[0-9]+) "                            /* 1: Match timestamp */
@@ -400,6 +400,7 @@ static bool dhcp_server_lease_parse_line(struct osn_dhcp_server_lease *dl, const
         "(([0-9]+\\.?){4}) "                    /* 4,5: Match IP address */
         "(\\*|[a-zA-Z0-9_-]+) "                 /* 6: Match hostname, can be "*" */
         "(\\*|([0-9]+,?)+) "                    /* 7,8: Match fingerprint, can be "*" */
+        "(\"(\\*|[^\"]+)\" )?"                  /* 9: Match vendor-class, can be "*" */
         "[^ ]+$";                               /* Match CID, can be "*" */
 
     static bool parse_re_compiled = false;
@@ -456,6 +457,12 @@ static bool dhcp_server_lease_parse_line(struct osn_dhcp_server_lease *dl, const
             sizeof(dl->dl_fingerprint),
             line,
             rm[7]);
+
+    /* Copy the vendor-class */
+    os_reg_match_cpy(dl->dl_vendorclass,
+            sizeof(dl->dl_vendorclass),
+            line,
+            rm[9]);
 
     dl->dl_leasetime = strtod(sleasetime, NULL);
 

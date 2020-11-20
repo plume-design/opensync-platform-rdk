@@ -362,6 +362,7 @@ bool stats_clients_get(
     INT ssid_radio_index;
     ULONG s, snum;
     char ssid_ifname[128];
+    BOOL enabled = false;
 
     if (!radio_entry_to_hal_radio_index(radio_cfg, &radio_index))
     {
@@ -400,6 +401,12 @@ bool stats_clients_get(
         }
 
         if (radio_index != ssid_radio_index)
+        {
+            continue;
+        }
+
+        ret = wifi_getSSIDEnable(s, &enabled);
+        if (ret != RETURN_OK || !enabled)
         {
             continue;
         }
