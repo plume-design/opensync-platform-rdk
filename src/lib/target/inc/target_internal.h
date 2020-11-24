@@ -97,10 +97,12 @@ typedef struct
     // Target specific client data
     wifi_associated_dev_stats_t     stats;
     wifi_associated_dev3_t          dev3;
+#ifndef CONFIG_RDK_11AX_SUPPORT
     wifi_associated_dev_rate_info_rx_stats_t stats_rx[STATS_RECORDS];
     wifi_associated_dev_rate_info_tx_stats_t stats_tx[STATS_RECORDS];
     unsigned                        num_rx;
     unsigned                        num_tx;
+#endif
     uint64_t                        stats_cookie;
     ds_dlist_node_t                 node;
 } stats_client_record_t;
@@ -116,6 +118,7 @@ typedef struct
     uint64_t            chan_self;
     uint64_t            chan_rx;
     uint64_t            chan_tx;
+    int32_t             chan_noise;
 } stats_survey_bss_t;
 
 // off-channel survey
@@ -127,6 +130,7 @@ typedef struct
     uint32_t            chan_self;
     uint32_t            chan_rx;
     uint32_t            chan_tx;
+    int32_t             chan_noise;
 } stats_survey_obss_t;
 
 typedef struct
@@ -212,6 +216,14 @@ void                 cloud_config_set_mode(const char *device_mode);
 
 void                 dhcp_server_status_dispatch(void);
 bool                 dhcp_server_resync_all_leases(void);
+
+void                 wps_hal_init();
+void                 wps_to_state(INT ssid_index, struct schema_Wifi_VIF_State *vstate);
+void                 vif_config_set_wps(INT ssid_index,
+                                        const struct schema_Wifi_VIF_Config *vconf,
+                                        const struct schema_Wifi_VIF_Config_flags *changed,
+                                        const char *radio_ifname);
+
 
 extern struct ev_loop   *wifihal_evloop;
 

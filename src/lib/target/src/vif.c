@@ -834,6 +834,21 @@ bool vif_copy_to_config(
     LOGT("vconf->rrm = %d", vconf->rrm);
     SCHEMA_SET_INT(vconf->btm, vstate->btm);
     LOGT("vconf->btm = %d", vconf->btm);
+    if (vconf->wps_exists)
+    {
+        SCHEMA_SET_INT(vconf->wps, vstate->wps);
+        LOGT("vconf->wps = %d", vconf->wps);
+    }
+    if (vconf->wps_pbc_exists)
+    {
+        SCHEMA_SET_INT(vconf->wps_pbc, vstate->wps_pbc);
+        LOGT("vconf->wps_pbc = %d", vconf->wps_pbc);
+    }
+    if (vconf->wps_pbc_key_id_exists)
+    {
+        SCHEMA_SET_STR(vconf->wps_pbc_key_id, vstate->wps_pbc_key_id);
+        LOGT("vconf->wps_pbc_key_id = %s", vconf->wps_pbc_key_id);
+    }
 
     // security, security_keys, security_len
     for (i = 0; i < vstate->security_len; i++)
@@ -979,6 +994,10 @@ bool vif_state_get(
     {
         LOGW("%s: cannot get security for %s", __func__, ssid_ifname);
     }
+
+#ifdef CONFIG_RDK_WPS_SUPPORT
+    wps_to_state(ssidIndex, vstate);
+#endif
 
     // mac_list_type (w/ exists)
     // mac_list, mac_list_len
@@ -1183,6 +1202,9 @@ bool target_vif_config_set2(
         }
     }
 
+#ifdef CONFIG_RDK_WPS_SUPPORT
+    vif_config_set_wps(ssid_index, vconf, changed, rconf->if_name);
+#endif
 
     if (changed->security && vconf->security_len)
     {

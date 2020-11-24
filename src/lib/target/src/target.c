@@ -34,6 +34,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "target.h"
 #include "target_internal.h"
+#include "osp_unit.h"
 
 #include "osync_hal.h"
 
@@ -57,25 +58,25 @@ bool target_ready(struct ev_loop *loop)
 
     // Check if we can read important entity information
 
-    if (!target_serial_get(ARRAY_AND_SIZE(tmp)))
+    if (!osp_unit_serial_get(ARRAY_AND_SIZE(tmp)))
     {
         LOGW("Target not ready, failed to query serial number");
         return false;
     }
 
-    if (!target_id_get(ARRAY_AND_SIZE(tmp)))
+    if (!osp_unit_id_get(ARRAY_AND_SIZE(tmp)))
     {
         LOGW("Target not ready, failed to query id (CM MAC)");
         return false;
     }
 
-    if (!target_model_get(ARRAY_AND_SIZE(tmp)))
+    if (!osp_unit_model_get(ARRAY_AND_SIZE(tmp)))
     {
         LOGW("Target not ready, failed to query model number");
         return false;
     }
 
-    if (!target_platform_version_get(ARRAY_AND_SIZE(tmp)))
+    if (!osp_unit_platform_version_get(ARRAY_AND_SIZE(tmp)))
     {
         LOGW("Target not ready, failed to query platform version");
         return false;
@@ -167,29 +168,4 @@ bool target_close(target_init_opt_t opt, struct ev_loop *loop)
     target_map_close();
 
     return true;
-}
-
-const char* target_persistent_storage_dir(void)
-{
-    return TARGET_PERSISTENT_STORAGE;
-}
-
-const char* target_scripts_dir(void)
-{
-    return TARGET_SCRIPTS_PATH;
-}
-
-const char* target_tools_dir(void)
-{
-    return TARGET_TOOLS_PATH;
-}
-
-const char* target_bin_dir(void)
-{
-    return TARGET_BIN_PATH;
-}
-
-const char* target_speedtest_dir(void)
-{
-    return target_tools_dir();
 }

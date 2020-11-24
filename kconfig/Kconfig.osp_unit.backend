@@ -1,0 +1,8 @@
+if PLATFORM_IS_RDK
+
+config OSP_UNIT_RDK
+    bool "RDK unit"
+    help
+        Use RDK specific implementation of OSP Unit API
+
+endif

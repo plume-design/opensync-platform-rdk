@@ -27,11 +27,8 @@
 # RDK unit override for OSN library
 #
 ##############################################################################
-UNIT_SRC := $(filter-out src/osn_dhcp_server_dnsmasq.c,$(UNIT_SRC))
-UNIT_SRC := $(filter-out src/linux/dnsmasq_server.c,$(UNIT_SRC))
-
 UNIT_SRC_DIR := $(OVERRIDE_DIR)/src
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/osn_dhcps.c
+UNIT_SRC_TOP += $(if $(CONFIG_OSN_BACKEND_DHCPV4_SERVER_RDK),$(UNIT_SRC_DIR)/osn_dhcps.c)
 
 UNIT_DEPS += $(PLATFORM_DIR)/src/lib/osync_hal
 UNIT_DEPS += src/lib/log

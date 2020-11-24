@@ -260,31 +260,6 @@ osync_hal_return_t osync_hal_inet_add_to_bridge(
         const char *br_name);
 
 /**
- * @brief Create VLAN interface.
- *
- * Create virtual interface with VLAN id.
- *
- * @param[in] if_name name of interface
- * @param[in] vlan_id VLAN ID
- *
- * @return OSYNC_HAL_SUCCESS or OSYNC_HAL_FAILURE.
- */
-osync_hal_return_t osync_hal_inet_create_vlan(
-        const char *if_name,
-        unsigned int vlan_id);
-
-/**
- * @brief Destroy VLAN interface.
- *
- * Destroy virtual interface with VLAN id.
- *
- * @param[in] if_name name of interface
- *
- * @return OSYNC_HAL_SUCCESS or OSYNC_HAL_FAILURE.
- */
-osync_hal_return_t osync_hal_inet_destroy_vlan(const char *if_name);
-
-/**
  * @brief Get current cloud mode.
  *
  * The OpenSync can run in several control modes. This function

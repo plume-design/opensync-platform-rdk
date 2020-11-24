@@ -1,0 +1,8 @@
+if PLATFORM_IS_RDK
+
+config OSN_BACKEND_DHCPV4_SERVER_RDK
+    bool "RDK DHCP v4 server"
+    help
+        Use RDK specific implementation of OSN DHCP v4 API
+
+endif

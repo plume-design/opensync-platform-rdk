@@ -46,21 +46,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 /*****************************************************************************/
 
-#define LOG_TRIGGER_DIR     "/tmp/lm/trigger"
-#define LOG_STATE_FILE      "/nvram/lm_log_state.json"
 #define LOG_PULL_CMD        "/usr/opensync/scripts/lm_log_pull.sh"
 
 /*****************************************************************************/
-
-const char* target_log_trigger_dir(void)
-{
-    return LOG_TRIGGER_DIR;
-}
-
-const char* target_log_state_file(void)
-{
-    return LOG_STATE_FILE;
-}
 
 bool target_log_pull(const char *upload_url, const char *upload_token)
 {
@@ -71,7 +59,7 @@ bool target_log_pull(const char *upload_url, const char *upload_token)
              LOG_PULL_CMD,
              upload_url,
              upload_token,
-             LOG_TRIGGER_DIR);
+             CONFIG_TARGET_PATH_LOG_TRIGGER);
 
     return !cmd_log(tmp);
 }

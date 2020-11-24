@@ -60,6 +60,13 @@ config RDK_HAS_ASSOC_REQ_IES
         the band steering manager will not have all the information
         until the next CONNECT event.
 
+config RDK_11AX_SUPPORT
+    bool "The 802.11ax standard is supported"
+    default n
+    help
+        Select true if the platform is 802.11ax capable and
+        telemetry HALs are able to provide 11ax related data.
+
 config RDK_MULTI_PSK_SUPPORT
     bool "Multi-PSK support"
     default n
@@ -71,71 +78,152 @@ config RDK_MULTI_PSK_SUPPORT
         wifi_pushMultiPskKeys(),
         wifi_getMultiPskKeys()
 
-menuconfig DEFAULT_OSYNC_HAL
-    bool "OSync HAL defaults"
+config RDK_WPS_SUPPORT
+    bool "WPS support"
+    default n
     help
-        Select default OSync HAL implementations.
+        This feature enables WPS support.
 
-if DEFAULT_OSYNC_HAL
+menu "OSync HAL API"
 
-config OSYNC_HAL_USE_DEFAULT_INIT
-    bool "osync_hal_init()"
-    default n
+choice
+    prompt "osync_hal_init()"
+    default OSYNC_HAL_USE_DEFAULT_INIT
+    config OSYNC_HAL_USE_DEFAULT_INIT
+        bool "osync_hal_init() default"
 
-config OSYNC_HAL_USE_DEFAULT_READY
-    bool "osync_hal_ready()"
-    default n
+        help
+            Default implementation of osync_hal_init()
 
-config OSYNC_HAL_USE_DEFAULT_DEINIT
-    bool "osync_hal_deinit()"
-    default n
+    osource "vendor/*/kconfig/Kconfig.osync_hal.init_backend"
+endchoice
 
-config OSYNC_HAL_USE_DEFAULT_FETCH_CONNECTED_CLIENTS
-    bool "osync_hal_fetch_connected_clients()"
-    default n
+choice
+    prompt "osync_hal_ready()"
+    default OSYNC_HAL_USE_DEFAULT_READY
+    config OSYNC_HAL_USE_DEFAULT_READY
+        bool "osync_hal_ready() default"
 
-config OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE
-    bool "osync_hal_devinfo_get_cloud_mode()"
-    default n
+        help
+            Default implementation of osync_hal_ready()
 
-config OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR
-    bool "osync_hal_devinfo_get_redirector_addr()"
-    default n
+    osource "vendor/*/kconfig/Kconfig.osync_hal.ready_backend"
+endchoice
+
+choice
+    prompt "osync_hal_deinit()"
+    default OSYNC_HAL_USE_DEFAULT_DEINIT
+    config OSYNC_HAL_USE_DEFAULT_DEINIT
+        bool "osync_hal_deinit() default"
+
+        help
+            Default implementation of osync_hal_deinit()
+
+    osource "vendor/*/kconfig/Kconfig.osync_hal.deinit_backend"
+endchoice
+
+choice
+    prompt "osync_hal_fetch_connected_clients()"
+    default OSYNC_HAL_USE_DEFAULT_FETCH_CONNECTED_CLIENTS
+    config OSYNC_HAL_USE_DEFAULT_FETCH_CONNECTED_CLIENTS
+        bool "osync_hal_fetch_connected_clients() default"
+
+        help
+            Default implementation of osync_hal_fetch_connected_clients()
+
+    osource "vendor/*/kconfig/Kconfig.osync_hal.fetch_connected_clients_backend"
+endchoice
+
+choice
+    prompt "osync_hal_devinfo_get_cloud_mode()"
+    default OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE
+    config OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE
+        bool "osync_hal_devinfo_get_cloud_mode() default"
+
+        help
+            Default implementation of osync_hal_devinfo_get_cloud_mode()
+
+    osource "vendor/*/kconfig/Kconfig.osync_hal.devinfo_get_cloud_mode_backend"
+endchoice
+
+choice
+    prompt "osync_hal_devinfo_get_redirector_addr()"
+    default OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR
+        config OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR
+        bool "osync_hal_devinfo_get_redirector_addr() default"
+
+        help
+            Default implementation of osync_hal_devinfo_get_redirector_addr()
+
+    osource "vendor/*/kconfig/Kconfig.osync_hal.devinfo_get_redirector_addr_backend"
+endchoice
+
+choice
+    prompt "osync_hal_inet_set_iface_config()"
+    default OSYNC_HAL_USE_DEFAULT_INET_SET_IFACE_CONFIG
+        config OSYNC_HAL_USE_DEFAULT_INET_SET_IFACE_CONFIG
+        bool "osync_hal_inet_set_iface_config() default"
+
+        help
+            Default implementation of osync_hal_inet_set_iface_config()
+
+    osource "vendor/*/kconfig/Kconfig.osync_hal.inet_set_iface_config_backend"
+endchoice
+
+choice
+    prompt "osync_hal_inet_create_gre()"
+    default OSYNC_HAL_USE_DEFAULT_INET_CREATE_GRE
+        config OSYNC_HAL_USE_DEFAULT_INET_CREATE_GRE
+        bool "osync_hal_inet_create_gre() default"
+
+        help
+            Default implementation of osync_hal_inet_create_gre()
+
+    osource "vendor/*/kconfig/Kconfig.osync_hal.inet_create_gre_backend"
+endchoice
+
+choice
+    prompt "osync_hal_inet_destroy_gre()"
+    default OSYNC_HAL_USE_DEFAULT_INET_DESTROY_GRE
+        config OSYNC_HAL_USE_DEFAULT_INET_DESTROY_GRE
+        bool "osync_hal_inet_destroy_gre() default"
+
+        help
+            Default implementation of osync_hal_inet_destroy_gre()
+
+    osource "vendor/*/kconfig/Kconfig.osync_hal.inet_destroy_gre_backend"
+endchoice
+
+choice
+    prompt "osync_hal_inet_add_to_bridge()"
+    default OSYNC_HAL_USE_DEFAULT_INET_ADD_TO_BRIDGE
+        config OSYNC_HAL_USE_DEFAULT_INET_ADD_TO_BRIDGE
+        bool "osync_hal_inet_add_to_bridge()"
+
+        help
+            Default implementation of osync_hal_inet_add_to_bridge()
+
+    osource "vendor/*/kconfig/Kconfig.osync_hal.inet_add_to_bridge_backend"
+endchoice
+
+choice
+    prompt "osync_hal_get_country_code()"
+    default OSYNC_HAL_USE_DEFAULT_GET_COUNTRY_CODE
+        config OSYNC_HAL_USE_DEFAULT_GET_COUNTRY_CODE
+        bool "osync_hal_get_country_code() default"
+
+        help
+            Default implementation of osync_hal_get_country_code()
+
+    osource "vendor/*/kconfig/Kconfig.osync_hal.get_country_code_backend"
+endchoice
+
+endmenu
 
 config RDK_DHCP_LEASES_PATH
     string "DHCP leases path"
     default "/tmp/dnsmasq.leases"
     help
         DHCP leases path
-
-config OSYNC_HAL_USE_DEFAULT_INET_SET_IFACE_CONFIG
-    bool "osync_hal_inet_set_iface_config()"
-    default n
-
-config OSYNC_HAL_USE_DEFAULT_INET_CREATE_GRE
-    bool "osync_hal_inet_create_gre()"
-    default n
-
-config OSYNC_HAL_USE_DEFAULT_INET_DESTROY_GRE
-    bool "osync_hal_inet_destroy_gre()"
-    default n
-
-config OSYNC_HAL_USE_DEFAULT_INET_ADD_TO_BRIDGE
-    bool "osync_hal_inet_add_to_bridge()"
-    default n
-
-config OSYNC_HAL_USE_DEFAULT_INET_CREATE_VLAN
-    bool "osync_hal_inet_create_vlan()"
-    default n
-
-config OSYNC_HAL_USE_DEFAULT_INET_DESTROY_VLAN
-    bool "osync_hal_inet_destroy_vlan()"
-    default n
-
-config OSYNC_HAL_USE_DEFAULT_GET_COUNTRY_CODE
-    bool "osync_hal_get_country_code()"
-    default n
-
-endif
 
 endif

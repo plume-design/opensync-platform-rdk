@@ -32,12 +32,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <errno.h>
 
 #include "log.h"
-#include "target.h"
 #include "devinfo.h"
 #include "const.h"
 #include "build_version.h"
 
-/*****************************************************************************/
+#include "osp_unit.h"
 
 #define MODULE_ID LOG_MODULE_ID_OSA
 
@@ -58,118 +57,138 @@ static struct
 
     bool        pver_cached;
     char        pver[MAX_CACHE_LEN];
-} target_entity_cache;
+} osp_unit_cache;
 
-
-/******************************************************************************
- *  PUBLIC definitions
- *****************************************************************************/
-
-bool target_serial_get(void *buff, size_t buffsz)
+bool osp_unit_serial_get(char *buff, size_t buffsz)
 {
-    if (!target_entity_cache.serial_cached)
+    if (!osp_unit_cache.serial_cached)
     {
         if (!devinfo_getv(DEVINFO_SERIAL_NUM,
-                          ARRAY_AND_SIZE(target_entity_cache.serial)))
+                          ARRAY_AND_SIZE(osp_unit_cache.serial)))
         {
             return false;
         }
-        target_entity_cache.serial_cached = true;
+        osp_unit_cache.serial_cached = true;
     }
 
-    snprintf(buff, buffsz, "%s", target_entity_cache.serial);
+    snprintf(buff, buffsz, "%s", osp_unit_cache.serial);
     return true;
 }
 
-bool target_id_get(void *buff, size_t buffsz)
+bool osp_unit_id_get(char *buff, size_t buffsz)
 {
-    if (!target_entity_cache.id_cached)
+    if (!osp_unit_cache.id_cached)
     {
         if (!devinfo_getv(DEVINFO_CM_MAC,
-                          ARRAY_AND_SIZE(target_entity_cache.id)))
+                          ARRAY_AND_SIZE(osp_unit_cache.id)))
         {
             return false;
         }
 
-        if (strlen(target_entity_cache.id) != 17)
+        if (strlen(osp_unit_cache.id) != 17)
         {
-            LOGE("target_id_get() bad CM_MAC format");
+            LOGE("osp_unit_id_get() bad CM_MAC format");
             return false;
         }
 
-        target_entity_cache.id_cached = true;
+        osp_unit_cache.id_cached = true;
     }
 
     snprintf(buff,
              buffsz,
              "%c%c%c%c%c%c%c%c%c%c%c%c",
-             toupper(target_entity_cache.id[0]),
-             toupper(target_entity_cache.id[1]),
-             // target_entity_cache.id[2] == ":"
-             toupper(target_entity_cache.id[3]),
-             toupper(target_entity_cache.id[4]),
-             // target_entity_cache.id[5] == ":"
-             toupper(target_entity_cache.id[6]),
-             toupper(target_entity_cache.id[7]),
-             // target_entity_cache.id[8] == ":"
-             toupper(target_entity_cache.id[9]),
-             toupper(target_entity_cache.id[10]),
-             // target_entity_cache.id[11] == ":"
-             toupper(target_entity_cache.id[12]),
-             toupper(target_entity_cache.id[13]),
-             // target_entity_cache.id[14] == ":"
-             toupper(target_entity_cache.id[15]),
-             toupper(target_entity_cache.id[16]));
+             toupper(osp_unit_cache.id[0]),
+             toupper(osp_unit_cache.id[1]),
+             // osp_unit_cache.id[2] == ":"
+             toupper(osp_unit_cache.id[3]),
+             toupper(osp_unit_cache.id[4]),
+             // osp_unit_cache.id[5] == ":"
+             toupper(osp_unit_cache.id[6]),
+             toupper(osp_unit_cache.id[7]),
+             // osp_unit_cache.id[8] == ":"
+             toupper(osp_unit_cache.id[9]),
+             toupper(osp_unit_cache.id[10]),
+             // osp_unit_cache.id[11] == ":"
+             toupper(osp_unit_cache.id[12]),
+             toupper(osp_unit_cache.id[13]),
+             // osp_unit_cache.id[14] == ":"
+             toupper(osp_unit_cache.id[15]),
+             toupper(osp_unit_cache.id[16]));
 
     return true;
 }
 
-bool target_sku_get(void *buff, size_t buffsz)
+bool osp_unit_sku_get(char *buff, size_t buffsz)
 {
     // SKU info not available
     return false;
 }
 
-bool target_model_get(void *buff, size_t buffsz)
+bool osp_unit_model_get(char *buff, size_t buffsz)
 {
-    if (!target_entity_cache.model_cached)
+    if (!osp_unit_cache.model_cached)
     {
         if (!devinfo_getv(DEVINFO_MODEL_NUM,
-                          ARRAY_AND_SIZE(target_entity_cache.model)))
+                          ARRAY_AND_SIZE(osp_unit_cache.model)))
         {
             return false;
         }
-        target_entity_cache.model_cached = true;
+        osp_unit_cache.model_cached = true;
     }
 
-    snprintf(buff, buffsz, "%s", target_entity_cache.model);
+    snprintf(buff, buffsz, "%s", osp_unit_cache.model);
     return true;
 }
 
-bool target_sw_version_get(void *buff, size_t buffsz)
+bool osp_unit_sw_version_get(char *buff, size_t buffsz)
 {
     snprintf(buff, buffsz, "%s", app_build_ver_get());
     return true;
 }
 
-bool target_hw_revision_get(void *buff, size_t buffsz)
+bool osp_unit_hw_revision_get(char *buff, size_t buffsz)
 {
     // HW version info not available
     return false;
 }
 
-bool target_platform_version_get(void *buff, size_t buffsz)
+bool osp_unit_platform_version_get(char *buff, size_t buffsz)
 {
-    if (!target_entity_cache.pver_cached)
+    if (!osp_unit_cache.pver_cached)
     {
         if (!devinfo_getv(DEVINFO_SOFTWARE_VER,
-                          ARRAY_AND_SIZE(target_entity_cache.pver)))
+                          ARRAY_AND_SIZE(osp_unit_cache.pver)))
         {
             return false;
         }
-        target_entity_cache.pver_cached = true;
+        osp_unit_cache.pver_cached = true;
     }
 
-    snprintf(buff, buffsz, "%s", target_entity_cache.pver);
+    snprintf(buff, buffsz, "%s", osp_unit_cache.pver);
     return true;
+}
+
+bool osp_unit_vendor_part_get(char *buff, size_t buffsz)
+{
+    return false;
+}
+
+bool osp_unit_manufacturer_get(char *buff, size_t buffsz)
+{
+    return false;
+}
+
+bool osp_unit_factory_get(char *buff, size_t buffsz)
+{
+    return false;
+}
+
+bool osp_unit_mfg_date_get(char *buff, size_t buffsz)
+{
+    return false;
+}
+
+bool osp_unit_vendor_name_get(char *buff, size_t buffsz)
+{
+    return false;
 }

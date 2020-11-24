@@ -31,40 +31,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "osync_hal.h"
 #include "target_internal.h"
 
-#define TARGET_LOG_PREFIX           "[Mesh]"
-#define TARGET_LOG_HAS_LEVEL
-#define TARGET_LOG_HAS_HOSTNAME
-
-#define TARGET_RUN_PATH             "/var/run/opensync"
-#define TARGET_BIN_PATH             "/usr/opensync/bin"
-#define TARGET_TOOLS_PATH           "/usr/opensync/tools"
-#define TARGET_SCRIPTS_PATH         "/usr/opensync/scripts"
 #define TARGET_CERT_PATH            "/usr/opensync/etc/certs"
-#define TARGET_MANAGERS_PID_PATH    TARGET_RUN_PATH
 #define TARGET_OVSDB_SOCK_PATH      "/var/run/openvswitch/db.sock"
 
 #ifndef TARGET_LOGREAD_FILENAME
 #define TARGET_LOGREAD_FILENAME     "/var/log/messages"
 #endif
-
-#define TARGET_PERSISTENT_STORAGE   "/nvram"
-
-/******************************************************************************
- *  MANAGERS definitions
- *****************************************************************************/
-#define TARGET_MANAGER_PATH(X)      "/usr/opensync/bin/"X
-
-/******************************************************************************
- *  TARGET INIT options  - Managers specific to RDK platform
- *****************************************************************************/
-// This value should not collude with any existing manager from
-// target_init_opt_t defined in target.h. Assigning a large value to avoid
-// collusion
-#define TARGET_INIT_MGR_RM          200
-
-/******************************************************************************
- *  CLIENT definitions
- *****************************************************************************/
 
 /******************************************************************************
  *  RADIO definitions

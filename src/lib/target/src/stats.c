@@ -289,12 +289,14 @@ static bool stats_client_fetch(
         wifi_associated_dev3_t     *assoc_dev)
 {
     stats_client_record_t *client_entry = NULL;
+#ifndef CONFIG_RDK_11AX_SUPPORT
     wifi_associated_dev_rate_info_rx_stats_t *stats_rx = NULL;
     wifi_associated_dev_rate_info_tx_stats_t *stats_tx = NULL;
+    int statIndex = radioIndex;
+#endif
     mac_address_str_t mac_str;
     ULLONG handle = 0;
     int ret;
-    int statIndex = radioIndex;
 
     client_entry = stats_client_record_alloc();
 
@@ -315,6 +317,7 @@ static bool stats_client_fetch(
             &handle);
     if (ret != RETURN_OK) goto err;
 
+#ifndef CONFIG_RDK_11AX_SUPPORT
     ret = wifi_getApAssociatedDeviceRxStatsResult(
             statIndex,
             &assoc_dev->cli_MACAddress,
@@ -334,6 +337,7 @@ static bool stats_client_fetch(
     if (ret != RETURN_OK) goto err;
     memcpy(&client_entry->stats_tx, stats_tx, sizeof(*stats_tx) * client_entry->num_tx);
     free(stats_tx);
+#endif /* CONFIG_RDK_11AX_SUPPORT */
 
     client_entry->stats_cookie = handle;
 
@@ -456,7 +460,9 @@ bool stats_clients_convert(
         dpp_client_record_t       *client_result)
 {
     mac_address_str_t mac_str;
+#ifndef CONFIG_RDK_11AX_SUPPORT
     radio_type_t radio_type = radio_cfg->type;
+#endif
 
     dpp_mac_to_str(data_new->info.mac, mac_str);
 
@@ -517,10 +523,12 @@ bool stats_clients_convert(
         LOGD("New connection - clear old stat records");
         memset(&data_old->stats, 0, sizeof(data_old->stats));
         memset(&data_old->dev3, 0, sizeof(data_old->dev3));
+#ifndef CONFIG_RDK_11AX_SUPPORT
         memset(&data_old->stats_rx, 0, sizeof(data_old->stats_rx));
         memset(&data_old->stats_tx, 0, sizeof(data_old->stats_tx));
         data_old->num_rx = 0;
         data_old->num_tx = 0;
+#endif
     }
 
     ADD_DELTA(stats.bytes_tx,   stats.cli_tx_bytes);
@@ -532,12 +540,25 @@ bool stats_clients_convert(
     ADD_DELTA(stats.errors_tx,  stats.cli_tx_errors);
     ADD_DELTA(stats.errors_rx,  stats.cli_rx_errors);
 
+#ifdef CONFIG_RDK_11AX_SUPPORT
+    client_result->stats.rssi = data_new->dev3.cli_SNR;
+#else
     client_result->stats.rssi = auto_rssi_to_above_noise_floor(data_new->dev3.cli_RSSI);
+#endif
     LOG(TRACE, "Client %s stats %s=%d", mac_str, "stats.rssi", client_result->stats.rssi);
 
+#ifdef CONFIG_RDK_11AX_SUPPORT
+    /* 11ax compatible HAL implementation should provide an average tx/rx rates [mbps] that
+     * are SU-normalized.
+     */
+    client_result->stats.rate_tx = data_new->stats.cli_tx_rate;
+    client_result->stats.rate_rx = data_new->stats.cli_rx_rate;
+#else
     ASSIGN_AVG_FLOAT(stats.rate_tx, dev3.cli_LastDataUplinkRate / 1000.0);
     ASSIGN_AVG_FLOAT(stats.rate_rx, dev3.cli_LastDataDownlinkRate / 1000.0);
+#endif
 
+#ifndef CONFIG_RDK_11AX_SUPPORT
     // RX STATS
 
     int n;  // index in new record
@@ -698,6 +719,7 @@ bool stats_clients_convert(
 
         ds_dlist_insert_tail(&client_result->stats_tx, client_stats_tx);
     }
+#endif /* CONFIG_RDK_11AX_SUPPORT */
 
     return true;
 }
@@ -763,9 +785,10 @@ bool stats_survey_get(
             survey_record->stats.survey_bss.chan_self     = survey_data.chan[i].ch_utilization_busy_self;
             survey_record->stats.survey_bss.chan_rx       = survey_data.chan[i].ch_utilization_busy_rx;
             survey_record->stats.survey_bss.chan_busy_ext = survey_data.chan[i].ch_utilization_busy_ext;
+            survey_record->stats.survey_bss.chan_noise    = survey_data.chan[i].ch_noise;
 
             LOGT("Fetched %s %s %u survey "
-                 "{active=%llu busy=%llu tx=%llu self=%llu rx=%llu ext=%llu}",
+                 "{active=%llu busy=%llu tx=%llu self=%llu rx=%llu ext=%llu noise=%d}",
                  radio_get_name_from_type(radio_cfg->type),
                  radio_get_scan_name_from_type(scan_type),
                  survey_record->info.chan,
@@ -774,7 +797,8 @@ bool stats_survey_get(
                  (unsigned long long)survey_record->stats.survey_bss.chan_tx,
                  (unsigned long long)survey_record->stats.survey_bss.chan_self,
                  (unsigned long long)survey_record->stats.survey_bss.chan_rx,
-                 (unsigned long long)survey_record->stats.survey_bss.chan_busy_ext);
+                 (unsigned long long)survey_record->stats.survey_bss.chan_busy_ext,
+                 survey_record->stats.survey_bss.chan_noise);
         }
         else
         {
@@ -787,9 +811,14 @@ bool stats_survey_get(
             survey_record->stats.survey_obss.chan_self     = (uint32_t)survey_data.chan[i].ch_utilization_busy_self;
             survey_record->stats.survey_obss.chan_rx       = (uint32_t)survey_data.chan[i].ch_utilization_busy_rx;
             survey_record->stats.survey_obss.chan_busy_ext = (uint32_t)survey_data.chan[i].ch_utilization_busy_ext;
+#ifdef CONFIG_RDK_11AX_SUPPORT
+            survey_record->stats.survey_obss.chan_noise    = survey_data.chan[i].ch_noise;
+#else
+            survey_record->stats.survey_obss.chan_noise    = -95;
+#endif
 
             LOGT("Fetched %s %s %u survey "
-                 "{active=%u busy=%u tx=%u self=%u rx=%u ext=%u}",
+                 "{active=%u busy=%u tx=%u self=%u rx=%u ext=%u noise=%d}",
                  radio_get_name_from_type(radio_cfg->type),
                  radio_get_scan_name_from_type(scan_type),
                  survey_record->info.chan,
@@ -798,7 +827,8 @@ bool stats_survey_get(
                  survey_record->stats.survey_obss.chan_tx,
                  survey_record->stats.survey_obss.chan_self,
                  survey_record->stats.survey_obss.chan_rx,
-                 survey_record->stats.survey_obss.chan_busy_ext);
+                 survey_record->stats.survey_obss.chan_busy_ext,
+                 survey_record->stats.survey_obss.chan_noise);
         }
 
         ds_dlist_insert_tail(survey_list, survey_record);
@@ -863,6 +893,7 @@ bool stats_survey_convert(
         survey_record->chan_self     = PERCENT(data.chan_self, data.chan_active);
         survey_record->chan_busy_ext = PERCENT(data.chan_busy_ext, data.chan_active);
         survey_record->duration_ms   = data.chan_active / 1000;
+        survey_record->chan_noise    = data_new->stats.survey_bss.chan_noise;
     }
     else /* OFF and FULL */
     {
@@ -894,6 +925,7 @@ bool stats_survey_convert(
         survey_record->chan_tx       = PERCENT(data.chan_tx, data.chan_active);
         survey_record->chan_rx       = PERCENT(data.chan_rx, data.chan_active);
         survey_record->duration_ms   = data.chan_active / 1000;
+        survey_record->chan_noise    = data_new->stats.survey_obss.chan_noise;
     }
 
     return true;

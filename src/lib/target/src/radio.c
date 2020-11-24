@@ -179,6 +179,46 @@ static bool radio_change_channel(
     return true;
 }
 
+static bool radio_change_zero_wait_dfs(INT radioIndex, const struct schema_Wifi_Radio_Config *rconf)
+{
+    INT     ret;
+    BOOL    zero_dfs_supported = false;
+    BOOL    enable = false;
+    BOOL    precac = false;
+
+    ret = wifi_isZeroDFSSupported(radioIndex, &zero_dfs_supported);
+    if (ret != RETURN_OK)
+    {
+        LOGW("%s: cannot get isZeroDFSSupported for idx %d", __func__, radioIndex);
+        return false;
+    }
+    if (!zero_dfs_supported)
+    {
+        LOGE("%s, zero dfs is not supported for idx %d", __func__, radioIndex);
+        return false;
+    }
+
+    if (!strncmp(rconf->zero_wait_dfs, "enable", sizeof(rconf->zero_wait_dfs)))
+    {
+        enable = true;
+    }
+    else if (!strncmp(rconf->zero_wait_dfs, "precac", sizeof(rconf->zero_wait_dfs)))
+    {
+        enable = true;
+        precac = true;
+    }
+
+    ret = wifi_setZeroDFSState(radioIndex, enable, precac);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s, cannot setZeroDFSState, enable: %d, precac: %d for idx %d", __func__,
+            enable, precac, radioIndex);
+        return false;
+    }
+
+    return true;
+}
+
 static const char* channel_state_to_state_str(wifi_channelState_t state)
 {
     switch (state)
@@ -251,6 +291,46 @@ static void update_radar_info(struct schema_Wifi_Radio_State *rstate)
     snprintf(rstate->radar[2], sizeof(rstate->radar[2]), "%u", dfs_radar_timestamp);
 
     rstate->radar_len = 3;
+}
+
+static void update_zero_wait_dfs(INT radioIndex, struct schema_Wifi_Radio_State *rstate)
+{
+    INT     ret;
+    BOOL    zero_dfs_supported = false;
+    BOOL    enable;
+    BOOL    precac;
+
+    ret = wifi_isZeroDFSSupported(radioIndex, &zero_dfs_supported);
+    if (ret != RETURN_OK)
+    {
+        LOGW("%s: cannot get isZeroDFSSupported for idx %d", __func__, radioIndex);
+        return;
+    }
+    if (!zero_dfs_supported)
+    {
+        LOGI("%s, zero dfs is not supported for idx %d", __func__, radioIndex);
+        return;
+    }
+
+    ret = wifi_getZeroDFSState(radioIndex, &enable, &precac);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s, cannot getZeroDFSState for idx %d", __func__, radioIndex);
+        return;
+    }
+    if (enable && precac)
+    {
+        STRSCPY(rstate->zero_wait_dfs, "precac");
+    }
+    else if (enable)
+    {
+        STRSCPY(rstate->zero_wait_dfs, "enable");
+    }
+    else
+    {
+        STRSCPY(rstate->zero_wait_dfs, "disable");
+    }
+    rstate->zero_wait_dfs_exists = true;
 }
 
 static bool radio_state_get(
@@ -439,6 +519,8 @@ static bool radio_state_get(
         LOGW("%s: Failed to get possible channels", radio_ifname);
     }
 
+    update_zero_wait_dfs(radioIndex, rstate);
+
     LOGN("Get radio state completed for radio index %d", radioIndex);
     return true;
 }
@@ -527,6 +609,11 @@ static bool radio_copy_config_from_state(
     LOGT("rconf->ht_mode = %s", rconf->ht_mode);
     SCHEMA_SET_STR(rconf->hw_mode, rstate->hw_mode);
     LOGT("rconf->hw_mode = %s", rconf->hw_mode);
+    if (rstate->zero_wait_dfs_exists)
+    {
+        SCHEMA_SET_STR(rconf->zero_wait_dfs, rstate->zero_wait_dfs);
+        LOGT("rconf->zero_wait_dfs = %s", rconf->zero_wait_dfs);
+    }
 
     return true;
 }
@@ -628,6 +715,10 @@ bool target_radio_config_init2()
         dfs_event_cb_registered = true;
     }
 
+#ifdef CONFIG_RDK_WPS_SUPPORT
+    wps_hal_init();
+#endif
+
     return true;
 }
 
@@ -693,6 +784,14 @@ bool target_radio_config_set2(
         }
     }
 
+    if (changed->zero_wait_dfs)
+    {
+        if (!radio_change_zero_wait_dfs(radioIndex, rconf))
+        {
+            LOGE("%s: cannot change radio zero wait dfs for %s", __func__, rconf->if_name);
+            return false;
+        }
+    }
 
     radio_trigger_resync();
     return true;

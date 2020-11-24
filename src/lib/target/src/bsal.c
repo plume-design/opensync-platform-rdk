@@ -846,38 +846,6 @@ error:
     return -1;
 }
 
-int target_bsal_client_measure(
-        const char *ifname,
-        const uint8_t *mac_addr,
-        int num_samples)
-{
-    const iface_t *iface = NULL;
-    int ret = 0;
-
-    iface = group_get_iface_by_name(ifname);
-    if (iface == NULL)
-    {
-        LOGE("BSAL Unable to trigger measurement for client "MAC_ADDR_FMT" (failed to find iface: %s)",
-             MAC_ADDR_UNPACK(mac_addr), ifname);
-        goto error;
-    }
-
-    ret = wifi_steering_clientMeasure(group.index, iface->wifihal_cfg.apIndex, (UCHAR*) mac_addr);
-    if (ret != RETURN_OK)
-    {
-        LOGE("BSAL Failed to trigger measurement for client "MAC_ADDR_FMT" to iface: %s (wifi_steering_clientMeasure() "
-             "failed with code %d)", MAC_ADDR_UNPACK(mac_addr), iface->bsal_cfg.ifname, ret);
-        goto error;
-    }
-
-    LOGI("BSAL Triggered measurement for client "MAC_ADDR_FMT" on iface: %s", MAC_ADDR_UNPACK(mac_addr), ifname);
-
-    return 0;
-
-error:
-    return -1;
-}
-
 int target_bsal_client_disconnect(
         const char *ifname,
         const uint8_t *mac_addr,
