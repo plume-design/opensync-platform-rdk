@@ -69,18 +69,6 @@ bool target_vif_config_get(char *ifname, struct schema_Wifi_VIF_Config *vconf);
  *****************************************************************************/
 
 /******************************************************************************
- *  MAP definitions
- *****************************************************************************/
-bool            target_map_ifname_init(void);
-extern bool     target_map_update_vlan(const char *ifname, uint16_t vlan_id);
-extern char *   target_map_ifname_to_bridge(const char *ifname);
-extern char *   target_map_ifname_to_gre_bridge(const char *ifname);
-extern char *   target_map_vlan_to_bridge(uint16_t vlan_id);
-extern uint8_t  target_map_ifname_to_vif_radio_idx(const char *ifname);
-extern uint16_t target_map_ifname_to_vlan(const char *ifname);
-extern uint16_t target_map_bridge_to_vlan(const char *bridge);
-
-/******************************************************************************
  *  STATS counters type: cumulative (1) or deltas (0)
  *****************************************************************************/
 // if not defined, default to cumulative counters

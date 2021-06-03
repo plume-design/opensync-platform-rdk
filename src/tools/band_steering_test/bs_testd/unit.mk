@@ -32,7 +32,7 @@ UNIT_NAME := bs_testd
 
 UNIT_DISABLE := n
 
-UNIT_DIR := tools
+UNIT_DIR := tools/band_steering_test
 
 UNIT_TYPE := BIN
 

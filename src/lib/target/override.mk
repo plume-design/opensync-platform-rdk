@@ -29,7 +29,9 @@
 ##############################################################################
 
 UNIT_SRC := $(TARGET_COMMON_SRC)
+ifneq ($(CONFIG_RDK_DISABLE_SYNC),y)
 UNIT_SRC := $(filter-out src/target_mac_learn.c,$(UNIT_SRC))
+endif
 
 UNIT_SRC_DIR := $(OVERRIDE_DIR)/src
 
@@ -40,11 +42,16 @@ UNIT_SRC_TOP += $(UNIT_SRC_DIR)/radio.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/vif.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/stats.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/log.c
+
+ifneq ($(CONFIG_RDK_DISABLE_SYNC),y)
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/sync.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/maclearn.c
+endif
+
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/bsal.c
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/cloud_config.c
 UNIT_SRC_TOP += $(if $(CONFIG_RDK_WPS_SUPPORT), $(UNIT_SRC_DIR)/wps.c)
+UNIT_SRC_TOP += $(if $(CONFIG_RDK_MULTI_AP_SUPPORT), $(UNIT_SRC_DIR)/multi_ap.c)
 
 UNIT_CFLAGS  += -I$(OVERRIDE_DIR)/inc
 UNIT_CFLAGS  += -DENABLE_MESH_SOCKETS

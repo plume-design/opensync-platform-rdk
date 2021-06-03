@@ -215,51 +215,6 @@ osync_hal_return_t osync_hal_inet_set_iface_config(
         const osync_hal_inet_iface_config_t *config);
 
 /**
- * @brief Create GRE tunnel.
- *
- * Create new Generic Routing Encapsulation TAP interface.
- * If the interface already exists, it should be updated.
- *
- * @param[in] if_name name of the new interface
- * @param[in] local IP address of local endpoint as ASCII string
- * @param[in] remote IP address of remote endpoint as ASCII string
- * @param[in] dev name of the parent interface
- * @param[in] tos type of service
- *
- * @return OSYNC_HAL_SUCCESS or OSYNC_HAL_FAILURE.
- */
-osync_hal_return_t osync_hal_inet_create_gre(
-        const char *if_name,
-        const char *local,
-        const char *remote,
-        const char *dev,
-        unsigned int tos);
-
-/**
- * @brief Destroy GRE tunnel.
- *
- * Destroy Generic Routing Encapsulation TAP interface.
- *
- * @param[in] if_name name of interface to destroy
- *
- * @return OSYNC_HAL_SUCCESS if interface was successfully destroyed
- *         or does not exist, OSYNC_HAL_FAILURE otherwise.
- */
-osync_hal_return_t osync_hal_inet_destroy_gre(const char *if_name);
-
-/**
- * @brief Add interface to the bridge.
- *
- * @param[in] if_name name of interface
- * @param[in] br_name name of the bridge
- *
- * @return OSYNC_HAL_SUCCESS or OSYNC_HAL_FAILURE.
- */
-osync_hal_return_t osync_hal_inet_add_to_bridge(
-        const char *if_name,
-        const char *br_name);
-
-/**
  * @brief Get current cloud mode.
  *
  * The OpenSync can run in several control modes. This function

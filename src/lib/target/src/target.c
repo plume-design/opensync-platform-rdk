@@ -94,12 +94,6 @@ bool target_init(target_init_opt_t opt, struct ev_loop *loop)
                    // the maximum length of version string. It is usually
                    // something like "2.0.0", so assume 64 is enough.
 
-    if (!target_map_ifname_init())
-    {
-        LOGE("Target init failed to initialize interface mapping");
-        return false;
-    }
-
     if (osync_hal_init() != OSYNC_HAL_SUCCESS)
     {
         LOGE("OSync HAL init failed");
@@ -128,11 +122,15 @@ bool target_init(target_init_opt_t opt, struct ev_loop *loop)
                 return -1;
             }
 
+#ifndef CONFIG_RDK_DISABLE_SYNC
             sync_init(SYNC_MGR_WM, NULL);
+#endif
             break;
 
         case TARGET_INIT_MGR_CM:
+#ifndef CONFIG_RDK_DISABLE_SYNC
             sync_init(SYNC_MGR_CM, cloud_config_mode_init);
+#endif
             break;
 
         case TARGET_INIT_MGR_BM:
@@ -155,8 +153,10 @@ bool target_close(target_init_opt_t opt, struct ev_loop *loop)
     switch (opt)
     {
         case TARGET_INIT_MGR_WM:
+#ifndef CONFIG_RDK_DISABLE_SYNC
             sync_cleanup();
             /* fall through */
+#endif
 
         case TARGET_INIT_MGR_SM:
             break;

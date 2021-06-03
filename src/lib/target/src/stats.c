@@ -383,34 +383,36 @@ bool stats_clients_get(
 
     for (s = 0; s < snum; s++)
     {
+        ret = wifi_getSSIDEnable(s, &enabled);
+        if (ret != RETURN_OK)
+        {
+            LOGW("%s: failed to get SSID enabled state for index %lu. Skipping", __func__, s);
+            continue;
+        }
+
+        // Silently skip ifaces that are not enabled
+        if (enabled == false) continue;
+
         memset(ssid_ifname, 0, sizeof(ssid_ifname));
         ret = wifi_getApName(s, ssid_ifname);
         if (ret != RETURN_OK)
         {
             LOGE("%s: cannot get ap name for index %ld", __func__, s);
-            return false;
-        }
-
-        if (!target_unmap_ifname_exists(ssid_ifname))
-        {
             continue;
         }
+
+        // Silentely skip VAPs that are not controlled by OpenSync
+        if (!vap_controlled(ssid_ifname)) continue;
 
         ret = wifi_getSSIDRadioIndex(s, &ssid_radio_index);
         if (ret != RETURN_OK)
         {
             LOGE("%s: cannot get radio index for SSID %s\n", __func__,
                     ssid_ifname);
-            return false;
-        }
-
-        if (radio_index != ssid_radio_index)
-        {
             continue;
         }
 
-        ret = wifi_getSSIDEnable(s, &enabled);
-        if (ret != RETURN_OK || !enabled)
+        if (radio_index != ssid_radio_index)
         {
             continue;
         }
@@ -419,12 +421,12 @@ bool stats_clients_get(
         if (ret != RETURN_OK)
         {
            LOGE("%s: cannot get SSID name status for %s", __func__, ssid_ifname);
-           return false;
+           continue;
         }
 
         if (essid && strcmp(*essid, ssid_name))
         {
-            continue;
+           continue;
         }
 
         client_array = NULL;
@@ -947,6 +949,7 @@ static bool stats_scan_initiate(
     int ret;
     ULONG s, snum;
     char ssid_ifname[128];
+    BOOL enabled;
 
     memset(ssid_ifname, 0, sizeof(ssid_ifname));
     ret = wifi_getSSIDNumberOfEntries(&snum);
@@ -958,13 +961,26 @@ static bool stats_scan_initiate(
 
     for (s = 0; s < snum; s++)
     {
+        ret = wifi_getSSIDEnable(s, &enabled);
+        if (ret != RETURN_OK)
+        {
+            LOGW("%s: failed to get SSID enabled state for index %lu. Skipping", __func__, s);
+            continue;
+        }
+
+        // Silently skip ifaces that are not enabled
+        if (enabled == false) continue;
+
         memset(ssid_ifname, 0, sizeof(ssid_ifname));
         ret = wifi_getApName(s, ssid_ifname);
         if (ret != RETURN_OK)
         {
             LOGE("%s: cannot get ap name for index %ld", __func__, s);
-            return false;
+            continue;
         }
+
+        // Silentely skip VAPs that are not controlled by OpenSync
+        if (!vap_controlled(ssid_ifname)) continue;
 
         if (!strcmp(ssid_ifname, radio_cfg->if_name))
         {
@@ -1060,7 +1076,7 @@ static void stats_scan_results_fetch(EV_P_ ev_timer *w, int revents)
     if (radio_index < 0)
     {
         LOGE("%s: cannot get radio index", __func__);
-        return;
+        goto exit;
     }
 
     free(g_scan_results);
@@ -1413,6 +1429,7 @@ bool stats_capacity_get(
     INT ssid_radio_index;
     ULONG s, snum;
     char ssid_ifname[128];
+    BOOL enabled;
 
     memset(capacity_result, 0, sizeof(*capacity_result));
 
@@ -1431,25 +1448,34 @@ bool stats_capacity_get(
 
     for (s = 0; s < snum; s++)
     {
+
+        ret = wifi_getSSIDEnable(s, &enabled);
+        if (ret != RETURN_OK)
+        {
+            LOGW("%s: failed to get SSID enabled state for index %lu. Skipping", __func__, s);
+            continue;
+        }
+
+        // Silently skip ifaces that are not enabled
+        if (enabled == false) continue;
         memset(ssid_ifname, 0, sizeof(ssid_ifname));
+
         ret = wifi_getApName(s, ssid_ifname);
         if (ret != RETURN_OK)
         {
             LOGE("%s: cannot get ap name for index %ld", __func__, s);
-            return false;
-        }
-
-        if (!target_unmap_ifname_exists(ssid_ifname))
-        {
             continue;
         }
+
+        // Silentely skip VAPs that are not controlled by OpenSync
+        if (!vap_controlled(ssid_ifname)) continue;
 
         ret = wifi_getSSIDRadioIndex(s, &ssid_radio_index);
         if (ret != RETURN_OK)
         {
             LOGE("%s: cannot get radio index for SSID %s\n", __func__,
                     ssid_ifname);
-            return false;
+            continue;
         }
 
         if (radio_index != ssid_radio_index)
@@ -1611,10 +1637,13 @@ bool target_stats_clients_get(
         ds_dlist_t                 *client_list,
         void                       *client_ctx)
 {
+    bool status = true;
+
     radio_entry_t *radio_cfg_ctx = target_radio_config_map(radio_cfg);
     if (radio_cfg_ctx == NULL)
     {
-        return false;
+        status = false;
+        goto exit;
     }
 
     bool ret;
@@ -1622,10 +1651,11 @@ bool target_stats_clients_get(
     ret = stats_clients_get(radio_cfg_ctx, essid, client_list);
     if (!ret)
     {
-        return false;
+        status = false;
     }
 
-    return (*client_cb)(client_list, client_ctx, true);
+exit:
+    return (*client_cb)(client_list, client_ctx, status);
 }
 
 bool target_stats_clients_convert(
@@ -1673,11 +1703,13 @@ bool target_stats_survey_get(
 {
     radio_entry_t *radio_cfg_ctx = NULL;
     bool ret;
+    bool status = true;
 
     radio_cfg_ctx = target_radio_scan_config_map(radio_cfg, scan_type);
     if (radio_cfg_ctx == NULL)
     {
-        return false;
+        status = false;
+        goto exit;
     }
 
     ret = stats_survey_get(
@@ -1688,12 +1720,11 @@ bool target_stats_survey_get(
                 survey_list);
     if (!ret)
     {
-        return false;
+        status = false;
     }
 
-    (*survey_cb)(survey_list, survey_ctx, true);
-
-    return true;
+exit:
+    return (*survey_cb)(survey_list, survey_ctx, status);
 }
 
 bool target_stats_survey_convert(

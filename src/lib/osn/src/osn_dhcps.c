@@ -265,12 +265,6 @@ static bool dhcp_server_init(osn_dhcp_server_t *self, const char *ifname)
 {
     wifihal_evloop = EV_DEFAULT;
 
-    if (!target_map_ifname_init())
-    {
-        LOGE("Target init failed to initialize interface mapping");
-        return false;
-    }
-
     if (osync_hal_init() != OSYNC_HAL_SUCCESS)
     {
         LOGE("OSync HAL init failed");

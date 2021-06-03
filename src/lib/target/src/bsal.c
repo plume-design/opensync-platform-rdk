@@ -25,6 +25,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include "target.h"
+#include "ds_tree.h"
+#include "target_internal.h"
 
 #ifdef CONFIG_RDK_HAS_ASSOC_REQ_IES
 #include <endian.h>
@@ -64,6 +66,24 @@ typedef struct
     iface_t _iface_24g;
     iface_t _iface_5g;
 } bsal_group_t;
+
+typedef struct
+{
+    uint8_t bssid[BSAL_MAC_ADDR_LEN];
+    char ifname[BSAL_IFNAME_LEN];
+} bsal_neigh_key_t;
+
+typedef struct
+{
+    bsal_neigh_key_t    key;
+    bsal_neigh_info_t   nr;
+    ds_tree_node_t      dst_node;
+} bsal_neighbor_t;
+
+static ds_key_cmp_t bssid_ifname_cmp;
+static ds_tree_t    bsal_ifaces_neighbors = DS_TREE_INIT(bssid_ifname_cmp,
+                                                            bsal_neighbor_t,
+                                                            dst_node);
 
 static bsal_event_cb_t _bsal_event_cb = NULL;
 
@@ -370,6 +390,7 @@ static bool lookup_ifname(
     UINT s;
     INT radio_index;
     int ret;
+    BOOL enabled = false;
 
     ret = wifi_getSSIDNumberOfEntries(&snum);
     if (ret != RETURN_OK)
@@ -387,6 +408,16 @@ static bool lookup_ifname(
 
     for (s = 0; s < snum; s++)
     {
+        ret = wifi_getSSIDEnable(s, &enabled);
+        if (ret != RETURN_OK)
+        {
+            LOGW("%s: failed to get SSID enabled state for index %d. Skipping", __func__, s);
+            continue;
+        }
+
+        // Silently skip ifaces that are not enabled
+        if (enabled == false) continue;
+
         memset(buf, 0, sizeof(buf));
         ret = wifi_getApName(s, buf);
         if (ret != RETURN_OK)
@@ -395,6 +426,9 @@ static bool lookup_ifname(
                  s, ret);
             goto error;
         }
+
+        // Silentely skip VAPs that are not controlled by OpenSync
+        if (!vap_controlled(buf)) continue;
 
         if (strcmp(ifcfg->ifname, buf) != 0)
         {
@@ -491,6 +525,44 @@ static void bsal_client_to_wifi_steering_client(
 
 /*****************************************************************************/
 
+#ifdef CONFIG_RDK_MGMT_FRAME_CB_SUPPORT
+static INT mgmt_frame_cb(INT apIndex, UCHAR *sta_mac, UCHAR *frame, UINT len, wifi_mgmtFrameType_t type, wifi_direction_t dir)
+{
+    INT ret;
+    bsal_event_t event;
+    CHAR ifname[WIFI_HAL_STR_LEN];
+
+    if (type != WIFI_MGMT_FRAME_TYPE_ACTION) return RETURN_OK; // Currently we support action frames only
+    if (dir != wifi_direction_uplink) return RETURN_OK; // We only listen for received frames
+    if (len >= BSAL_MAX_ACTION_FRAME_LEN)
+    {
+        LOGN("Skipping action frame because it's too big (%d vs %d)", len, BSAL_MAX_ACTION_FRAME_LEN);
+        return RETURN_ERR;
+    }
+
+    LOGT("Received action frame, apIndex=%d, len=%u", apIndex, len);
+
+    memset(ifname, 0, sizeof(ifname));
+    ret = wifi_getApName(apIndex, ifname);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: failed to get ifname of VAP #%u (wifi_getApName() failed with code %d)",
+                __func__, apIndex, ret);
+        return RETURN_ERR;
+    }
+
+    memset(&event, 0, sizeof(event));
+    event.type = BSAL_EVENT_ACTION_FRAME;
+    STRSCPY(event.ifname, ifname);
+    memcpy(event.data.action_frame.data, frame, len);
+    event.data.action_frame.data_len = len;
+
+    _bsal_event_cb(&event);
+
+    return RETURN_OK;
+}
+#endif
+
 int target_bsal_init(
         bsal_event_cb_t event_cb,
         struct ev_loop *loop)
@@ -515,6 +587,13 @@ int target_bsal_init(
         goto error;
     }
 
+#ifdef CONFIG_RDK_MGMT_FRAME_CB_SUPPORT
+    if (wifi_mgmt_frame_callbacks_register(mgmt_frame_cb) != RETURN_OK)
+    {
+        LOGE("wifi_mgmt_frame_callbacks_register FAILED");
+        return -1;
+    }
+#endif
     LOGI("BSAL initialized");
 
     return 0;
@@ -1321,3 +1400,162 @@ int target_bsal_client_info(
 
     return 0;
 }
+
+static int bssid_ifname_cmp(void *_a, void *_b)
+{
+    bsal_neigh_key_t *a = _a;
+    bsal_neigh_key_t *b = _b;
+    int rc;
+
+    rc = memcmp(&a->bssid, &b->bssid, sizeof(a->bssid));
+    if (rc != 0) return rc;
+
+    rc = memcmp(&a->ifname, &b->ifname, sizeof(a->ifname));
+    if (rc != 0) return rc;
+
+    return 0;
+}
+
+static int bsal_send_update_neighbor_list(const char *ifname)
+{
+    bsal_neighbor_t         *iface_neighbor;
+    UINT                    iface_neighbors_number = 0;
+    wifi_NeighborReport_t   *neighbor_reports = NULL;
+    INT                     ap_index;
+    uint32_t                i = 0;
+    INT                     ret;
+
+    ds_tree_foreach(&bsal_ifaces_neighbors, iface_neighbor)
+    {
+        if (!strcmp(iface_neighbor->key.ifname, ifname))
+        {
+            iface_neighbors_number++;
+        }
+    }
+
+    if (!vif_ifname_to_idx(ifname, &ap_index))
+    {
+        return -1;
+    }
+
+    if (iface_neighbors_number > 0)
+    {
+        neighbor_reports = calloc(iface_neighbors_number, sizeof(wifi_NeighborReport_t));
+        if (!neighbor_reports)
+        {
+            LOGE("%s:%d: unable to allocate memory", __func__, __LINE__);
+            return -1;
+        }
+
+        // fill in the wifi_hal list with neighbors
+        ds_tree_foreach(&bsal_ifaces_neighbors, iface_neighbor)
+        {
+            if (strcmp(iface_neighbor->key.ifname, ifname))
+            {
+                continue;
+            }
+            if (i >= iface_neighbors_number)
+            {
+                break;
+            }
+            memcpy(neighbor_reports[i].bssid, iface_neighbor->nr.bssid, sizeof(neighbor_reports[i].bssid));
+            neighbor_reports[i].info = iface_neighbor->nr.bssid_info;
+            neighbor_reports[i].opClass = iface_neighbor->nr.op_class;
+            neighbor_reports[i].channel = iface_neighbor->nr.channel;
+            neighbor_reports[i].phyTable = iface_neighbor->nr.phy_type;
+            i++;
+        }
+    }
+
+    ret =  wifi_setNeighborReports((UINT)ap_index, iface_neighbors_number, neighbor_reports);
+    if (neighbor_reports) free(neighbor_reports);
+
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: unable to setNeighborReports for %s", __func__, ifname);
+        return -1;
+    }
+
+    return 0;
+}
+
+int target_bsal_rrm_set_neighbor(const char *ifname, const bsal_neigh_info_t *nr)
+{
+    bsal_neighbor_t     *iface_neighbor;
+    bsal_neigh_key_t    key;
+    int                 ret;
+
+    memset(&key, 0, sizeof(key));
+    memcpy(key.bssid, nr->bssid, sizeof(key.bssid));
+    STRSCPY(key.ifname, ifname);
+
+    // Insert or modify neighbor in the list
+    iface_neighbor = ds_tree_find(&bsal_ifaces_neighbors, &key);
+    if (iface_neighbor)
+    {
+        memcpy(&iface_neighbor->nr, nr, sizeof(iface_neighbor->nr));
+    }
+    else
+    {
+        iface_neighbor = calloc(1, sizeof(bsal_neighbor_t));
+        if (!iface_neighbor)
+        {
+            LOGE("%s:%d: unable to allocate memory", __func__, __LINE__);
+            return -1;
+        }
+        memcpy(&iface_neighbor->nr, nr, sizeof(iface_neighbor->nr));
+        memcpy(&iface_neighbor->key, &key, sizeof(iface_neighbor->key));
+        ds_tree_insert(&bsal_ifaces_neighbors, iface_neighbor, &iface_neighbor->key);
+    }
+
+    LOGD("BSAL: %s: inserted neighbor %s, "MAC_ADDR_FMT, __func__, ifname, MAC_ADDR_UNPACK(nr->bssid));
+
+    ret = bsal_send_update_neighbor_list(ifname);
+    if (ret)
+    {
+        ds_tree_remove(&bsal_ifaces_neighbors, iface_neighbor);
+        free(iface_neighbor);
+
+        LOGE("BSAL: %s: failed adding neighbor %s, "MAC_ADDR_FMT, __func__, ifname, MAC_ADDR_UNPACK(nr->bssid));
+        return ret;
+    }
+
+    LOGI("BSAL: %s: succesfully added neighbor %s, "MAC_ADDR_FMT, __func__, ifname, MAC_ADDR_UNPACK(nr->bssid));
+
+    return 0;
+}
+
+int target_bsal_rrm_remove_neighbor(const char *ifname, const bsal_neigh_info_t *nr)
+{
+    bsal_neighbor_t     *iface_neighbor;
+    bsal_neigh_key_t    key;
+    int                 ret;
+
+    memset(&key, 0, sizeof(key));
+    memcpy(key.bssid, nr->bssid, sizeof(key.bssid));
+    STRSCPY(key.ifname, ifname);
+
+    iface_neighbor = ds_tree_find(&bsal_ifaces_neighbors, &key);
+    if (!iface_neighbor)
+    {
+        LOGD("%s: unable to find neighbor bssid="MAC_ADDR_FMT" ifaname=%s", __func__,
+                                                    MAC_ADDR_UNPACK(nr->bssid), ifname);
+        return 0;
+    }
+
+    ds_tree_remove(&bsal_ifaces_neighbors, iface_neighbor);
+
+    ret = bsal_send_update_neighbor_list(ifname);
+    if (ret)
+    {
+        ds_tree_insert(&bsal_ifaces_neighbors, iface_neighbor, &key);
+        LOGE("BSAL: %s: failed removing neighbor %s, "MAC_ADDR_FMT, __func__, ifname, MAC_ADDR_UNPACK(nr->bssid));
+        return ret;
+    }
+    free(iface_neighbor);
+
+    LOGI("BSAL: %s: succesfully removed neighbor %s, "MAC_ADDR_FMT, __func__, ifname, MAC_ADDR_UNPACK(nr->bssid));
+
+    return 0;
+}
+

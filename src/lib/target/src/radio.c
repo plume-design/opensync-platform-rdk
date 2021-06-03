@@ -44,6 +44,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 #define MODULE_ID LOG_MODULE_ID_RADIO
+#define HAL_CB_QUEUE_MAX    20
 
 #define CSA_TBTT                        25
 #define RESYNC_UPDATE_DELAY_SECONDS     5
@@ -83,12 +84,27 @@ static c_item_t map_csa_chanwidth[] =
     C_ITEM_STR(160,                             "HT160")
 };
 
+typedef struct
+{
+    UINT                  radioIndex;
+    wifi_chan_eventType_t event;
+    UCHAR                 channel;
+    struct timeval        tv;
+
+    ds_dlist_node_t       node;
+} hal_cb_entry_t;
+
 static radio_cloud_mode_t radio_cloud_mode = RADIO_CLOUD_MODE_UNKNOWN;
 
 static bool dfs_event_cb_registered = false;
 static char dfs_last_channel[32];             // last channel reported by driver in radar event
 static char dfs_num_detected[32];             // number of DFS events detected
 static unsigned int dfs_radar_timestamp = 0;  // saved timestamp from radar detection event
+static struct ev_loop      *hal_cb_loop = NULL;
+static pthread_mutex_t      hal_cb_lock;
+static ev_async             hal_cb_async;
+static ds_dlist_t           hal_cb_queue;
+static int                  hal_cb_queue_len = 0;
 
 static struct target_radio_ops g_rops;
 static bool g_resync_ongoing = false;
@@ -163,6 +179,7 @@ static bool radio_change_channel(
         return false;
     }
 
+#ifndef CONFIG_RDK_DISABLE_SYNC
     if (!sync_send_channel_change(radioIndex, channel))
     {
         LOGW("%d: Failed to sync channel change to %u", radioIndex, channel);
@@ -172,6 +189,7 @@ static bool radio_change_channel(
     {
         LOGW("%d: Failed to sync channel bandwidth change to %u MHz", radioIndex, ch_width);
     }
+#endif
 
     LOGI("%s: Started CSA to channel %d, width %d, tbtt %d",
          radio_ifname, channel, ch_width, CSA_TBTT);
@@ -286,6 +304,7 @@ static void update_radar_info(struct schema_Wifi_Radio_State *rstate)
     STRSCPY_WARN(rstate->radar[0], strlen(dfs_last_channel) > 0 ? dfs_last_channel : "0");
 
     STRSCPY_WARN(rstate->radar_keys[1], "num_detected");
+    if (strlen(dfs_num_detected) > 0) STRSCPY_WARN(rstate->radar[1], dfs_num_detected);
 
     STRSCPY_WARN(rstate->radar_keys[2], "time");
     snprintf(rstate->radar[2], sizeof(rstate->radar[2]), "%u", dfs_radar_timestamp);
@@ -338,7 +357,7 @@ static bool radio_state_get(
         struct schema_Wifi_Radio_State *rstate)
 {
     os_macaddr_t                        macaddr;
-    CHAR                                pchannels[64];
+    CHAR                                pchannels[128];
     char                                *p;
     int                                 chan;
     int                                 ret;
@@ -541,43 +560,95 @@ static bool radio_state_update(UINT radioIndex)
     return true;
 }
 
+static void chan_event_async_cb(EV_P_ ev_async *w, int revents)
+{
+    ds_dlist_iter_t     qiter;
+    hal_cb_entry_t      *cbe;
+
+    pthread_mutex_lock(&hal_cb_lock);
+
+    cbe = ds_dlist_ifirst(&qiter, &hal_cb_queue);
+    while (cbe)
+    {
+        ds_dlist_iremove(&qiter);
+        hal_cb_queue_len--;
+
+        switch (cbe->event)
+        {
+            case WIFI_EVENT_CHANNELS_CHANGED:
+                LOGD("CHANNELS CHANGED, last_channel = %d\n", cbe->channel);
+                radio_state_update(cbe->radioIndex);
+                break;
+            case WIFI_EVENT_DFS_RADAR_DETECTED:
+                LOGD("DFS RADAR DETECTED, last_channel = %d\n", cbe->channel);
+
+                // Save last channel
+                snprintf(dfs_last_channel, sizeof(dfs_last_channel), "%d", cbe->channel);
+
+                // dfs_num_detected is always set to "1" currently
+                STRSCPY_WARN(dfs_num_detected, "1");
+
+                // Save timestamp
+                dfs_radar_timestamp = (unsigned int)cbe->tv.tv_sec;
+
+                radio_state_update(cbe->radioIndex);
+                break;
+            default:
+                LOGE("Unknown channel event: %d\n", cbe->event);
+                break;
+        }
+
+	LOGT("Free DFS chan cb event");
+        free(cbe);
+        cbe = ds_dlist_inext(&qiter);
+    }
+
+    pthread_mutex_unlock(&hal_cb_lock);
+}
+
 static void chan_event_cb(
         UINT radioIndex,
         wifi_chan_eventType_t event,
         UCHAR channel)
 {
+    hal_cb_entry_t      *cbe;
+    INT                 ret = RETURN_ERR;
     struct timeval tv;
 
-    switch (event)
+    // Save timestamp immediately
+    gettimeofday(&tv, NULL);
+
+    pthread_mutex_lock(&hal_cb_lock);
+
+    if (hal_cb_queue_len == HAL_CB_QUEUE_MAX)
     {
-        case WIFI_EVENT_CHANNELS_CHANGED:
-            LOGD("CHANNELS CHANGED, last_channel = %d\n", channel);
-            radio_state_update(radioIndex);
-            return;
-        case WIFI_EVENT_DFS_RADAR_DETECTED:
-            LOGD("DFS RADAR DETECTED, last_channel = %d\n", channel);
+        LOGW("chan_event_cb: Queue is full! Ignoring event...");
+        goto exit;
+    }
 
-            // Save last channel
-            snprintf(dfs_last_channel, sizeof(dfs_last_channel), "%d", channel);
+    LOGT("Allocate DFS cb event");
+    if ((cbe = calloc(1, sizeof(*cbe))) == NULL)
+    {
+        LOGE("chan_event_cb: Failed to allocate memory!");
+        goto exit;
+    }
 
-            // dfs_num_detected is always set to "1" currently
-            STRSCPY_WARN(dfs_num_detected, "1");
+    cbe->radioIndex = radioIndex;
+    cbe->event = event;
+    cbe->channel = channel;
+    cbe->tv = tv;
 
-            // Save timestamp
-            if (!gettimeofday(&tv, NULL))
-            {
-                dfs_radar_timestamp = (unsigned int)tv.tv_sec;
-            } else
-            {
-                dfs_radar_timestamp = 0;
-                LOGW("Cannot get timestamp for radar event: %s\n", strerror(errno));
-            }
-
-            radio_state_update(radioIndex);
-            return;
-        default:
-            LOGE("Unknown channel event: %d\n", event);
-            return;
+    ds_dlist_insert_tail(&hal_cb_queue, cbe);
+    hal_cb_queue_len++;
+    ret = RETURN_OK;
+exit:
+    pthread_mutex_unlock(&hal_cb_lock);
+    if (ret == RETURN_OK && hal_cb_loop)
+    {
+        if (!ev_async_pending(&hal_cb_async))
+        {
+            ev_async_send(hal_cb_loop, &hal_cb_async);
+        }
     }
 }
 
@@ -616,6 +687,25 @@ static bool radio_copy_config_from_state(
     }
 
     return true;
+}
+
+bool vap_controlled(const char *ifname)
+{
+#ifdef CONFIG_RDK_CONTROL_ALL_VAPS
+    return true;
+#endif
+
+    if (!strcmp(ifname, CONFIG_RDK_HOME_AP_24_IFNAME) ||
+        !strcmp(ifname, CONFIG_RDK_HOME_AP_50_IFNAME) ||
+        !strcmp(ifname, CONFIG_RDK_BHAUL_AP_24_IFNAME) ||
+        !strcmp(ifname, CONFIG_RDK_BHAUL_AP_50_IFNAME) ||
+        !strcmp(ifname, CONFIG_RDK_ONBOARD_AP_24_IFNAME) ||
+        !strcmp(ifname, CONFIG_RDK_ONBOARD_AP_50_IFNAME))
+        {
+            return true;
+        }
+
+    return false;
 }
 
 bool target_radio_config_init2()
@@ -670,11 +760,8 @@ bool target_radio_config_init2()
                 continue;
             }
 
-            // Filter SSID's that we don't have mappings for
-            if (!target_unmap_ifname_exists(ssid_ifname))
-            {
-                continue;
-            }
+            // Silentely skip VAPs that are not controlled by OpenSync
+            if (!vap_controlled(ssid_ifname)) continue;
 
             ret = wifi_getSSIDRadioIndex(s, &ssid_radio_idx);
             if (ret != RETURN_OK)
@@ -707,6 +794,13 @@ bool target_radio_config_init2()
 
     if (!dfs_event_cb_registered)
     {
+        hal_cb_loop = wifihal_evloop;
+        ds_dlist_init(&hal_cb_queue, hal_cb_entry_t, node);
+        hal_cb_queue_len = 0;
+        pthread_mutex_init(&hal_cb_lock, NULL);
+        ev_async_init(&hal_cb_async, chan_event_async_cb);
+        ev_async_start(hal_cb_loop, &hal_cb_async);
+
         if (wifi_chan_eventRegister(chan_event_cb) != RETURN_OK)
         {
             LOGE("Failed to register chan event callback\n");
@@ -717,6 +811,10 @@ bool target_radio_config_init2()
 
 #ifdef CONFIG_RDK_WPS_SUPPORT
     wps_hal_init();
+#endif
+
+#ifdef CONFIG_RDK_MULTI_AP_SUPPORT
+    multi_ap_hal_init();
 #endif
 
     return true;
@@ -803,6 +901,7 @@ static void radio_resync_all_task(void *arg)
     ULONG r, rnum;
     ULONG s, snum;
     char ssid_ifname[128];
+    BOOL enabled = false;
 
     LOGT("Re-sync started");
 
@@ -837,6 +936,16 @@ static void radio_resync_all_task(void *arg)
 
     for (s = 0; s < snum; s++)
     {
+        ret = wifi_getSSIDEnable(s, &enabled);
+        if (ret != RETURN_OK)
+        {
+            LOGW("%s: failed to get SSID enabled state for index %lu. Skipping", __func__, s);
+            continue;
+        }
+
+        // Silently skip ifaces that are not enabled
+        if (enabled == false) continue;
+
         memset(ssid_ifname, 0, sizeof(ssid_ifname));
         ret = wifi_getApName(s, ssid_ifname);
         if (ret != RETURN_OK)
@@ -845,11 +954,8 @@ static void radio_resync_all_task(void *arg)
             continue;
         }
 
-        // Filter SSID's that we don't have mappings for
-        if (!target_unmap_ifname_exists(ssid_ifname))
-        {
-            continue;
-        }
+        // Silentely skip VAPs that are not controlled by OpenSync
+        if (!vap_controlled(ssid_ifname)) continue;
 
         // Fetch existing clients
         if (!clients_hal_fetch_existing(s))
@@ -920,5 +1026,9 @@ radio_cloud_mode_set(radio_cloud_mode_t mode)
 {
     radio_cloud_mode = mode;
 
+#ifdef CONFIG_RDK_DISABLE_SYNC
+    return true;
+#else
     return sync_send_status(radio_cloud_mode);
+#endif
 }

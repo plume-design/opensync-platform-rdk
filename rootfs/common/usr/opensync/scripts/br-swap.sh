@@ -30,14 +30,6 @@
 
 BRLAN0="brlan0"
 
-ovsh_state()
-{
-    state="$1"
-    if [ "`/usr/opensync/tools/ovsh u Node_State -w key==OVS.Enable value~=$state`" == 0 ]; then
-        /usr/opensync/tools/ovsh i Node_State module~=rdk-rfc key~=OVS.Enable value~="$state"
-    fi
-}
-
 swap_native_to_ovs()
 {
     if [ `syscfg get mesh_enable` == "false" ]; then
@@ -68,10 +60,13 @@ swap_native_to_ovs()
     echo "$aplist" > /tmp/aplist
 
     brlan0_ip=`ifconfig "$BRLAN0" | grep Mask | tr -s ' ' | cut -d':' -f2 | cut -d' ' -f1`
+    brlan0_ipv6=`ip -6 addr show dev "$BRLAN0" | grep global | tr -s ' ' | cut -d' ' -f3`
     echo "$brlan0_ip" > /tmp/brlan0_ip
+    echo "$brlan0_ipv6" > /tmp/brlan0_ipv6
     brlan0_mask=`ifconfig "$BRLAN0" | grep Mask | tr -s ' ' | cut -d':' -f4 | cut -d' ' -f1`
     echo "$brlan0_mask" > /tmp/brlan0_mask
     ip route | grep "$BRLAN0" > /tmp/iproute
+    ip -6 route | grep "$BRLAN0" > /tmp/iproute6
 
     for j in $aplist
     do
@@ -81,9 +76,11 @@ swap_native_to_ovs()
     brctl delbr "$BRLAN0"
 
     ovs-vsctl add-br "$BRLAN0"
-    ifconfig "$BRLAN0" "$brlan0_ip" netmask "brlan0_mask"
+    ifconfig "$BRLAN0" "$brlan0_ip" netmask "$brlan0_mask"
     ifconfig "$BRLAN0" up
+    ip -6 address add "$brlan0_ipv6" dev "$BRLAN0"
     while read i; do ip route add $i ; done < /tmp/iproute
+    while read k; do ip -6 route add $k ; done < /tmp/iproute6
 
     for j in $aplist
     do
@@ -95,7 +92,6 @@ swap_native_to_ovs()
     ovs-vsctl show
 
     syscfg set mesh_ovs_state true
-    ovsh_state true
     echo "1" > /tmp/ovs_status
     return 0
 }
@@ -119,6 +115,12 @@ swap_ovs_to_native()
         brlan0_ip=`ifconfig "$BRLAN0" | grep Mask | tr -s ' ' | cut -d':' -f2 | cut -d' ' -f1`
     fi
 
+    if [ -e /tmp/brlan0_ipv6 ]; then
+        brlan0_ipv6=`ip -6 addr show dev "$BRLAN0" | grep global | tr -s ' ' | cut -d' ' -f3`
+    else
+        brlan0_ipv6=`ip -6 addr show dev "$BRLAN0" | grep global | tr -s ' ' | cut -d' ' -f3`
+    fi
+
     if [ -e /tmp/brlan0_mask ]; then
         brlan0_mask=`cat /tmp/brlan0_mask`
     else
@@ -127,6 +129,10 @@ swap_ovs_to_native()
 
     if [ ! -e /tmp/iproute ]; then
         ip route | grep "$BRLAN0" > /tmp/iproute
+    fi
+
+    if [ ! -e /tmp/iproute6 ]; then
+        ip -6 route | grep "$BRLAN0" > /tmp/iproute6
     fi
 
     for j in $aplist
@@ -140,9 +146,11 @@ swap_ovs_to_native()
     ovs-vsctl del-br "$BRLAN0"
 
     brctl addbr "$BRLAN0"
-    ifconfig "$BRLAN0" "$brlan0_ip" netmask "brlan0_mask"
+    ifconfig "$BRLAN0" "$brlan0_ip" netmask "$brlan0_mask"
     ifconfig "$BRLAN0" up
+    ip -6 address add "$brlan0_ipv6" dev "$BRLAN0"
     while read i; do ip route add $i ; done < /tmp/iproute
+    while read k; do ip route add $k ; done < /tmp/iproute6
 
     for j in $aplist
     do
@@ -154,7 +162,6 @@ swap_ovs_to_native()
     brctl show
 
     syscfg set mesh_ovs_state false
-    ovsh_state false
     rm /tmp/ovs_status
     return 0
 }

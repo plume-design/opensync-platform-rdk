@@ -159,15 +159,6 @@ static void wps_hal_async_cb(EV_P_ ev_async *w, int revents)
             continue;
         }
 
-        // Filter SSID's that we don't have mappings for
-        if (!target_unmap_ifname_exists(ifname))
-        {
-            free(cbe);
-            cbe = ds_dlist_inext(&qiter);
-            LOGD("Skipping wps event '%d' for '%s' (iface not mapped)", cbe->event, ifname);
-            continue;
-        }
-
         LOGD("wps: received event %d, for ifname: %s", cbe->event, ifname);
         switch (cbe->event)
         {

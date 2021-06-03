@@ -77,6 +77,8 @@ Prerequisites:
  * All clients need to be able to be put into the pre-defined SNR conditions. The reference SNR can be measured using airlog sniffer
    (if SNR or NF + RSSI readings are available) or using reference router running OpenSync. Clients should be able to be put into
    SNR=10, SNR=30, SNR=45 versus Device Under Test (DUT) signal conditions.
+ * The Home-APs must support BTM and RRM capabilities. To ensure those are enabled, you can use
+   "bs_cmd wifi_setBSSTransitionActivation <AP INDEX> 1" and "bs_cmd wifi_setNeighborReportActivation <AP_INDEX> 1"
 
 Test configuration:
  * Prepare MAC addresses of all the clients, the 2.4G DUT Home-AP and the 5G DUT Home-AP.
@@ -135,9 +137,9 @@ Steps:
 Corresponding pass criteria for each step:
  1. No errors reported
  2. Able to see packets in the airlog
- 3. PROBE events 'blocked' with SNR=10 (+/-6) received. No Probe responses seen in the airlog.
- 4. PROBE events 'blocked' with SNR=40 (+/-6) received. No Probe responses seen in the airlog.
- 5. PROBE events 'not blocked' with SNR=30 (+/-6) received. CONNECT event with correct capabilities (as in Test1) received. Client associated successfully.
+ 3. PROBE events 'blocked' with SNR=10 (+/-3) received. No Probe responses seen in the airlog.
+ 4. PROBE events 'blocked' with SNR=40 (+/-3) received. No Probe responses seen in the airlog.
+ 5. PROBE events 'not blocked' with SNR=30 (+/-3) received. CONNECT event with correct capabilities (as in Test1) received. Client associated successfully.
  6. Same as 3-5
  7. No errors
 

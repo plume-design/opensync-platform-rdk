@@ -43,6 +43,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define MODULE_ID LOG_MODULE_ID_VIF
 #define MAX_MULTI_PSK_KEYS 30
 
+static char vif_bridge_name[128];
+
 static c_item_t map_enable_disable[] =
 {
     C_ITEM_STR(true,                    "enabled"),
@@ -69,6 +71,7 @@ static c_item_t map_acl_modes[] =
 
 #define DEFAULT_ENC_MODE        "TKIPandAESEncryption"
 
+#ifdef CONFIG_RDK_LEGACY_SECURITY_SCHEMA
 #define OVSDB_SECURITY_KEY                  "key"
 #define OVSDB_SECURITY_OFTAG                "oftag"
 #define OVSDB_SECURITY_MODE                 "mode"
@@ -111,10 +114,22 @@ static c_item_t map_security[] =
     C_ITEM_STR(SEC_WPA_WPA2_PERSONAL,       "WPA-WPA2-Personal"),
     C_ITEM_STR(SEC_WPA_WPA2_ENTERPRISE,     "WPA-WPA2-Enterprise")
 };
+#endif
+
+#define OVSDB_SECURITY_KEY_MGMT_DPP        "dpp"
+#define OVSDB_SECURITY_KEY_MGMT_WPA_PSK    "wpa-psk"
+#define OVSDB_SECURITY_KEY_MGMT_WPA2_PSK   "wpa2-psk"
+#define OVSDB_SECURITY_KEY_MGMT_WPA2_EAP   "wpa2-eap"
+#define OVSDB_SECURITY_KEY_MGMT_SAE        "sae"
+#define RDK_SECURITY_KEY_MGMT_OPEN         "None"
+#define RDK_SECURITY_KEY_MGMT_WPA_PSK      "WPA-Personal"
+#define RDK_SECURITY_KEY_MGMT_WPA2_PSK     "WPA2-Personal"
+#define RDK_SECURITY_KEY_MGMT_WPA_WPA2_PSK "WPA-WPA2-Personal"
+#define RDK_SECURITY_KEY_MGMT_WPA2_EAP     "WPA2-Enterprise"
+#define RDK_SECURITY_KEY_MGMT_WPA3         "WPA3-Sae"
 
 static bool acl_to_state(
         INT ssid_index,
-        char *ssid_ifname,
         struct schema_Wifi_VIF_State *vstate)
 {
     char                    acl_buf[ACL_BUF_SIZE];
@@ -123,6 +138,7 @@ static bool acl_to_state(
     INT                     acl_mode;
     INT                     status = RETURN_ERR;
     INT                     i;
+    char                    *ssid_ifname = vstate->if_name;
 
     status = wifi_getApMacAddressControlMode(ssid_index, &acl_mode);
     if (status != RETURN_OK)
@@ -179,13 +195,13 @@ static bool acl_to_state(
 
 static void acl_apply(
         INT ssid_index,
-        const char *ssid_ifname,
         const struct schema_Wifi_VIF_Config *vconf)
 {
     c_item_t                *citem;
     INT                     acl_mode;
     INT                     ret;
     INT                     i;
+    const char              *ssid_ifname = target_map_ifname((char *)vconf->if_name);
 
     // !!! XXX: Cannot touch ACL for home interfaces, since they are currently
     //          used for band steering.
@@ -237,6 +253,7 @@ static void acl_apply(
     }
 }
 
+#ifdef CONFIG_RDK_LEGACY_SECURITY_SCHEMA
 static const char* security_conf_find_by_key(
         const struct schema_Wifi_VIF_Config *vconf,
         char *key)
@@ -291,11 +308,6 @@ static bool set_personal_credentials(
     }
 
     set_security_key_value(vstate, index, OVSDB_SECURITY_KEY, buf);
-
-    // TODO: We temporary removed multi-psk support from generic RDK platform.
-    // The multi-psk support will be added back when proper
-    // Wifi HAL API is created. We don't support direct hostapd-based
-    // multi-psk (it should be handled within the vendor layer).
 
     return true;
 }
@@ -468,24 +480,189 @@ static bool set_enc_mode(
 
     return set_personal_credentials(vstate, index, ssid_index);
 }
+#endif
 
+static bool security_key_mgmt_hal_to_ovsdb(
+       const char *key_mgmt,
+       struct schema_Wifi_VIF_State *vstate,
+       struct schema_Wifi_VIF_Config *vconfig
+        )
+{
+    if (!strcmp(key_mgmt, RDK_SECURITY_KEY_MGMT_WPA_PSK))
+    {
+        if (vstate) SCHEMA_VAL_APPEND(vstate->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_WPA_PSK);
+        if (vconfig) SCHEMA_VAL_APPEND(vconfig->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_WPA_PSK);
+        return true;
+    }
+    if (!strcmp(key_mgmt, RDK_SECURITY_KEY_MGMT_WPA2_PSK))
+    {
+        if (vstate) SCHEMA_VAL_APPEND(vstate->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_WPA2_PSK);
+        if (vconfig) SCHEMA_VAL_APPEND(vconfig->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_WPA2_PSK);
+        return true;
+    }
+    if (!strcmp(key_mgmt, RDK_SECURITY_KEY_MGMT_WPA_WPA2_PSK))
+    {
+        if (vstate) SCHEMA_VAL_APPEND(vstate->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_WPA_PSK);
+        if (vstate) SCHEMA_VAL_APPEND(vstate->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_WPA2_PSK);
+        if (vconfig) SCHEMA_VAL_APPEND(vconfig->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_WPA_PSK);
+        if (vconfig) SCHEMA_VAL_APPEND(vconfig->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_WPA2_PSK);
+        return true;
+    }
+    if (!strcmp(key_mgmt, RDK_SECURITY_KEY_MGMT_WPA3))
+    {
+        if (vstate) SCHEMA_VAL_APPEND(vstate->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_SAE);
+        if (vconfig) SCHEMA_VAL_APPEND(vconfig->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_SAE);
+        return true;
+    }
+    // The only 'enterpise' encryption present in OVSDB schema is WPA2-Enterpise, so skip
+    // other RDK 'enterpise' types.
+    if (!strcmp(key_mgmt, RDK_SECURITY_KEY_MGMT_WPA2_EAP))
+    {
+        if (vstate) SCHEMA_VAL_APPEND(vstate->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_WPA2_EAP);
+        if (vconfig) SCHEMA_VAL_APPEND(vconfig->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_WPA2_EAP);
+        return true;
+    }
+
+    LOGW("%s: unsupported security key mgmt %s", __func__, key_mgmt);
+    return false;
+}
+
+static bool get_enterprise_credentials(
+        INT ssid_index,
+        struct schema_Wifi_VIF_State *vstate)
+{
+    INT ret;
+    CHAR radius_ip[WIFIHAL_MAX_BUFFER];
+    CHAR radius_secret[WIFIHAL_MAX_BUFFER];
+    UINT radius_port;
+
+    memset(radius_ip, 0, sizeof(radius_ip));
+    memset(radius_secret, 0, sizeof(radius_secret));
+    LOGT("wifi_getApSecurityRadiusServer() index=%d", ssid_index);
+    ret = wifi_getApSecurityRadiusServer(ssid_index, radius_ip, &radius_port, radius_secret);
+    if (ret != RETURN_OK)
+    {
+        LOGE("wifi_getApSecurityRadiusServer() FAILED index=%d ret=%d", ssid_index, ret);
+        return false;
+    }
+    LOGT("wifi_getApSecurityRadiusServer() OK index=%d ip='%s' port=%d", ssid_index,
+          radius_ip, radius_port);
+
+    SCHEMA_SET_STR(vstate->radius_srv_addr, radius_ip);
+    SCHEMA_SET_INT(vstate->radius_srv_port, radius_port);
+    SCHEMA_SET_STR(vstate->radius_srv_secret, radius_secret);
+
+    return true;
+}
+
+static bool get_psks(
+        INT ssid_index,
+        struct schema_Wifi_VIF_State *vstate)
+{
+    INT ret;
+    CHAR buf[WIFIHAL_MAX_BUFFER];
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+    wifi_key_multi_psk_t keys[MAX_MULTI_PSK_KEYS];
+    int i;
+#endif
+
+    memset(buf, 0, sizeof(buf));
+    LOGT("wifi_getApSecurityKeyPassphrase() index=%d", ssid_index);
+    ret = wifi_getApSecurityKeyPassphrase(ssid_index, buf);
+    if (ret != RETURN_OK)
+    {
+        LOGE("wifi_getApSecurityKeyPassphrase() FAILED index=%d", ssid_index);
+        return false;
+    }
+    LOGT("wifi_getApSecurityKeyPassphrase() OK index=%d", ssid_index);
+
+    if (strlen(buf) == 0)
+    {
+        LOGW("wifi_getApSecurityKeyPassphrase() returned an empty SSID string, index=%d",
+              ssid_index);
+    }
+
+    SCHEMA_KEY_VAL_APPEND(vstate->wpa_psks, "key", buf);
+
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+    memset(keys, 0, sizeof(keys));
+    LOGT("wifi_getMultiPskKeys() index=%d", ssid_index);
+    ret = wifi_getMultiPskKeys(ssid_index, keys, MAX_MULTI_PSK_KEYS);
+    if (ret != RETURN_OK)
+    {
+        LOGE("wifi_getMultiPskKeys() FAILED index=%d", ssid_index);
+        return false;
+    }
+    LOGT("wifi_getMultiPskKeys() OK index=%d", ssid_index);
+
+    for (i = 0; i < MAX_MULTI_PSK_KEYS; i++)
+    {
+         if (strlen(keys[i].wifi_keyId) && strlen(keys[i].wifi_psk))
+         {
+             SCHEMA_KEY_VAL_APPEND(vstate->wpa_psks, keys[i].wifi_keyId, keys[i].wifi_psk);
+         }
+    }
+#endif
+
+    return true;
+}
+
+static bool get_security(
+        INT ssid_index,
+        struct schema_Wifi_VIF_State *vstate)
+{
+    CHAR buf[WIFIHAL_MAX_BUFFER];
+    INT ret;
+
+    memset(buf, 0, sizeof(buf));
+    LOGT("wifi_getApSecurityModeEnabled() index=%d", ssid_index);
+    ret = wifi_getApSecurityModeEnabled(ssid_index, buf);
+    if (ret != RETURN_OK)
+    {
+        LOGE("wifi_getApSecurityModeEnabled() index=%d, ret=%d", ssid_index, ret);
+        return false;
+    }
+    LOGT("wifi_getApSecurityModeEnabled() OK index=%d mode='%s'", ssid_index, buf);
+
+    if (!strcmp(buf, RDK_SECURITY_KEY_MGMT_OPEN))
+    {
+        SCHEMA_SET_INT(vstate->wpa, 0);
+        return true;
+    }
+
+    SCHEMA_SET_INT(vstate->wpa, 1);
+    if (!security_key_mgmt_hal_to_ovsdb(buf, vstate, NULL)) return false;
+
+    // The only 'enterprise' encryption present in OVSDB schema is WPA2-Enterpise, so skip
+    // other RDK 'enterprise' types.
+    if (!strcmp(buf, RDK_SECURITY_KEY_MGMT_WPA2_EAP))
+    {
+        return get_enterprise_credentials(ssid_index, vstate);
+    }
+
+    return get_psks(ssid_index, vstate);
+}
+
+#ifdef CONFIG_RDK_LEGACY_SECURITY_SCHEMA
 static bool security_to_state(
         INT ssid_index,
-        char *ssid_ifname,
         struct schema_Wifi_VIF_State *vstate)
 {
     sec_type_t              stype;
     c_item_t                *citem;
     CHAR                    buf[WIFIHAL_MAX_BUFFER];
     INT                     ret;
+    char                    *ssid_ifname = vstate->if_name;
 
     memset(buf, 0, sizeof(buf));
+    LOGT("Legacy wifi_getApSecurityModeEnabled(%d)", ssid_index);
     ret = wifi_getApSecurityModeEnabled(ssid_index, buf);
     if (ret != RETURN_OK)
     {
         LOGE("%s: Failed to get security mode", ssid_ifname);
         return false;
     }
+    LOGT("Legacy wifi_getApSecurityModeEnabled(%d) OK", ssid_index);
 
     if (!(citem = c_get_item_by_str(map_security, buf)))
     {
@@ -531,6 +708,21 @@ static bool security_to_state(
 
     return true;
 }
+
+#ifdef CONFIG_RDK_DISABLE_SYNC
+#define MAX_MODE_LEN         25
+#define MAX_PASS_LEN         65
+/**
+ * Mesh Sync Wifi configuration change message
+ */
+typedef struct _MeshWifiAPSecurity {
+    uint32_t  index;                    // AP index [0-15]
+    char      passphrase[MAX_PASS_LEN]; // AP Passphrase
+    char      secMode[MAX_MODE_LEN];    // Security mode
+    char      encryptMode[MAX_MODE_LEN];    // Encryption mode
+} MeshWifiAPSecurity;
+
+#endif
 
 static bool security_to_syncmsg(
         const struct schema_Wifi_VIF_Config *vconf,
@@ -609,6 +801,70 @@ static bool security_to_syncmsg(
 
     return true;
 }
+#endif
+
+static bool security_wpa_key_mgmt_match(const struct schema_Wifi_VIF_Config *vconf,
+                            const char *key_mgmt)
+{
+    int i = 0;
+
+    for (i = 0; i < vconf->wpa_key_mgmt_len; i++) {
+        if (strstr(vconf->wpa_key_mgmt[i], key_mgmt))
+            return true;
+    }
+
+    return false;
+}
+
+static const char *security_key_mgmt_ovsdb_to_hal(const struct schema_Wifi_VIF_Config *vconf)
+{
+    /* Only key mgmt modes combinations that can be reflected in RDK HAL API
+     * are handled.
+     * Note: WEP is not supported in ovsdb at all.
+     */
+    if (security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_WPA_PSK) &&
+            security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_WPA2_PSK))
+    {
+        return RDK_SECURITY_KEY_MGMT_WPA_WPA2_PSK;
+    }
+    if (security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_WPA_PSK))
+    {
+        return RDK_SECURITY_KEY_MGMT_WPA_PSK;
+    }
+    if (security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_WPA2_PSK))
+    {
+        return RDK_SECURITY_KEY_MGMT_WPA2_PSK;
+    }
+    if (security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_WPA2_EAP))
+    {
+        return RDK_SECURITY_KEY_MGMT_WPA2_EAP;
+    }
+    if (security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_SAE))
+    {
+        return RDK_SECURITY_KEY_MGMT_WPA3;
+    }
+
+    LOGW("%s: unsupported security key mgmt!", __func__);
+    return NULL;
+}
+
+static bool security_ovsdb_to_syncmsg(
+        INT ssid_index,
+        const struct schema_Wifi_VIF_Config *vconf,
+        MeshWifiAPSecurity *dest)
+{
+    const char *mode = security_key_mgmt_ovsdb_to_hal(vconf);
+
+    if (!mode) return false;
+    STRSCPY(dest->secMode, mode);
+
+    STRSCPY(dest->passphrase, vconf->wpa_psks[0]); // MeshAgent doesn't support Multi-PSK
+    STRSCPY(dest->encryptMode, DEFAULT_ENC_MODE);
+
+    dest->index = ssid_index;
+
+    return true;
+}
 
 static bool vif_is_enabled(INT ssid_index)
 {
@@ -642,12 +898,6 @@ bool vif_external_ssid_update(const char *ssid, int ssid_index)
     {
         LOGE("%s: cannot get ap name for index %d", __func__, ssid_index);
         return false;
-    }
-
-    if (!target_unmap_ifname_exists(ssid_ifname))
-    {
-        LOGD("%s in not in map - ignoring", ssid_ifname);
-        return true;
     }
 
     ret = wifi_getSSIDRadioIndex(ssid_index, &radio_idx);
@@ -684,10 +934,12 @@ bool vif_external_security_update(
     char radio_ifname[128];
     char ssid_ifname[128];
     struct schema_Wifi_VIF_Config vconf;
+#ifdef CONFIG_RDK_LEGACY_SECURITY_SCHEMA
     sec_type_t stype;
     c_item_t *citem;
     const char *enc;
     const char *mode;
+#endif
 
     memset(&vconf, 0, sizeof(vconf));
     vconf._partial_update = true;
@@ -698,12 +950,6 @@ bool vif_external_security_update(
     {
         LOGE("%s: cannot get ap name for index %d", __func__, ssid_index);
         return false;
-    }
-
-    if (!target_unmap_ifname_exists(ssid_ifname))
-    {
-        LOGD("%s in not in map - ignoring", ssid_ifname);
-        return true;
     }
 
     ret = wifi_getSSIDRadioIndex(ssid_index, &radio_idx);
@@ -722,6 +968,7 @@ bool vif_external_security_update(
         return false;
     }
 
+#ifdef CONFIG_RDK_LEGACY_SECURITY_SCHEMA
     if (!(citem = c_get_item_by_str(map_security, secMode)))
     {
         LOGE("%s: Failed to decode security mode (%s)", ssid_ifname, secMode);
@@ -791,6 +1038,19 @@ bool vif_external_security_update(
     vconf.security_present = true;
 
     SCHEMA_SET_STR(vconf.if_name, target_unmap_ifname(ssid_ifname));
+#endif
+
+    if (!strcmp(secMode, RDK_SECURITY_KEY_MGMT_OPEN))
+    {
+        SCHEMA_SET_INT(vconf.wpa, 0);
+    }
+    else
+    {
+         if (!security_key_mgmt_hal_to_ovsdb(secMode, NULL, &vconf)) return false;
+
+         SCHEMA_SET_INT(vconf.wpa, 1);
+         SCHEMA_KEY_VAL_APPEND(vconf.wpa_psks, "key", passphrase);
+    }
 
     LOGD("Updating VIF for new security");
     radio_rops_vconfig(&vconf, radio_ifname);
@@ -815,17 +1075,15 @@ bool vif_copy_to_config(
     LOGT("vconf->mode = %s", vconf->mode);
     SCHEMA_SET_INT(vconf->enabled, vstate->enabled);
     LOGT("vconf->enabled = %d", vconf->enabled);
-    if (vstate->vlan_id_exists)
+    if (vstate->bridge_exists)
     {
-        SCHEMA_SET_INT(vconf->vlan_id, vstate->vlan_id);
+        SCHEMA_SET_STR(vconf->bridge, vstate->bridge);
     }
-    LOGT("vconf->vlan_id = %d", vconf->vlan_id);
+    LOGT("vconf->bridge = %s", vconf->bridge);
     SCHEMA_SET_INT(vconf->ap_bridge, vstate->ap_bridge);
     LOGT("vconf->ap_bridge = %d", vconf->ap_bridge);
     SCHEMA_SET_INT(vconf->wds, vstate->wds);
     LOGT("vconf->wds = %d", vconf->wds);
-    SCHEMA_SET_INT(vconf->vif_radio_idx, vstate->vif_radio_idx);
-    LOGT("vconf->vif_radio_idx = %d", vconf->vif_radio_idx);
     SCHEMA_SET_STR(vconf->ssid_broadcast, vstate->ssid_broadcast);
     LOGT("vconf->ssid_broadcast = %s", vconf->ssid_broadcast);
     SCHEMA_SET_STR(vconf->ssid, vstate->ssid);
@@ -834,6 +1092,11 @@ bool vif_copy_to_config(
     LOGT("vconf->rrm = %d", vconf->rrm);
     SCHEMA_SET_INT(vconf->btm, vstate->btm);
     LOGT("vconf->btm = %d", vconf->btm);
+    if (vconf->uapsd_enable_exists)
+    {
+        SCHEMA_SET_INT(vconf->uapsd_enable, vstate->uapsd_enable);
+        LOGT("vconf->uapsd_enable = %d", vconf->uapsd_enable);
+    }
     if (vconf->wps_exists)
     {
         SCHEMA_SET_INT(vconf->wps, vstate->wps);
@@ -850,6 +1113,8 @@ bool vif_copy_to_config(
         LOGT("vconf->wps_pbc_key_id = %s", vconf->wps_pbc_key_id);
     }
 
+#ifdef CONFIG_RDK_LEGACY_SECURITY_SCHEMA
+    LOGT("Copying legacy security settings");
     // security, security_keys, security_len
     for (i = 0; i < vstate->security_len; i++)
     {
@@ -857,6 +1122,39 @@ bool vif_copy_to_config(
         STRSCPY(vconf->security[i],      vstate->security[i]);
     }
     vconf->security_len = vstate->security_len;
+#endif
+
+    SCHEMA_SET_INT(vconf->wpa, vstate->wpa);
+    LOGT("vconf->wpa = %d", vconf->wpa);
+
+    for (i = 0; i < vstate->wpa_key_mgmt_len; i++)
+    {
+        SCHEMA_VAL_APPEND(vconf->wpa_key_mgmt, vstate->wpa_key_mgmt[i]);
+        LOGT("vconf->wpa_key_mgmt[%d] = %s", i, vconf->wpa_key_mgmt[i]);
+    }
+
+    for (i = 0; i < vstate->wpa_psks_len; i++)
+    {
+        SCHEMA_KEY_VAL_APPEND(vconf->wpa_psks, vstate->wpa_psks_keys[i],
+                vstate->wpa_psks[i]);
+    }
+
+    if (vstate->radius_srv_addr_exists)
+    {
+        SCHEMA_SET_STR(vconf->radius_srv_addr, vstate->radius_srv_addr);
+        LOGT("vconf->radius_srv_addr = %s", vconf->radius_srv_addr);
+    }
+
+    if (vstate->radius_srv_port_exists)
+    {
+        SCHEMA_SET_INT(vconf->radius_srv_port, vstate->radius_srv_port);
+        LOGT("vconf->radius_srv_port = %d", vconf->radius_srv_port);
+    }
+
+    if (vstate->radius_srv_secret_exists)
+    {
+        SCHEMA_SET_STR(vconf->radius_srv_secret, vstate->radius_srv_secret);
+    }
 
     // mac_list, mac_list_len
     SCHEMA_SET_STR(vconf->mac_list_type, vstate->mac_list_type);
@@ -869,7 +1167,7 @@ bool vif_copy_to_config(
     return true;
 }
 
-static bool vif_get_radio_ifname(
+bool vif_get_radio_ifname(
         INT ssidIndex,
         char *radio_ifname,
         size_t radio_ifname_size)
@@ -899,179 +1197,372 @@ static bool vif_get_radio_ifname(
     return true;
 }
 
+static bool get_if_name(INT ssidIndex, struct schema_Wifi_VIF_State *vstate)
+{
+    INT ret;
+    char ssid_ifname[128];
+
+    memset(ssid_ifname, 0, sizeof(ssid_ifname));
+    LOGT("wifi_getApName() index=%d", ssidIndex);
+    ret = wifi_getApName(ssidIndex, ssid_ifname);
+    if (ret != RETURN_OK)
+    {
+        LOGE("wifi_getApName() FAILED index=%d ret=%d", ssidIndex, ret);
+        return false;
+    }
+    LOGT("wifi_getApName() OK index=%d if_name='%s'", ssidIndex, ssid_ifname);
+
+    SCHEMA_SET_STR(vstate->if_name, target_unmap_ifname(ssid_ifname));
+    return true;
+}
+
+static void get_ap_bridge(INT ssidIndex, struct schema_Wifi_VIF_State *vstate)
+{
+    INT ret;
+    BOOL bval = false;
+
+    LOGT("wifi_getApIsolationEnable() index=%d", ssidIndex);
+    ret = wifi_getApIsolationEnable(ssidIndex, &bval);
+    if (ret != RETURN_OK)
+    {
+        LOGW("wifi_getApIsolationEnable() FAILED index=%d ret=%d", ssidIndex, ret);
+        return;
+    }
+
+    LOGT("wifi_getApIsolationEnable() OK index=%d bval=%d", ssidIndex, bval);
+    SCHEMA_SET_INT(vstate->ap_bridge, bval ? false : true);
+}
+
+static void get_ssid_broadcast(INT ssidIndex, struct schema_Wifi_VIF_State *vstate)
+{
+    INT ret;
+    BOOL bval = false;
+    char *str = NULL;
+
+    LOGT("wifi_getApSsidAdvertisementEnable() index=%d", ssidIndex);
+    ret = wifi_getApSsidAdvertisementEnable(ssidIndex, &bval);
+    if (ret != RETURN_OK)
+    {
+        LOGW("wifi_getApSsidAdvertisementEnable() FAILED index=%d ret=%d", ssidIndex, ret);
+    }
+    LOGT("wifi_getApSsidAdvertisementEnable() OK index=%d bval=%d", ssidIndex, bval);
+
+    str = c_get_str_by_key(map_enable_disable, bval);
+    if (strlen(str) == 0)
+    {
+        LOGW("Failed to decode ssid_enable index=%d bval=%d", ssidIndex, bval);
+        return;
+    }
+
+    SCHEMA_SET_STR(vstate->ssid_broadcast, str);
+}
+
+static void get_ssid(INT ssidIndex, struct schema_Wifi_VIF_State *vstate)
+{
+    INT ret;
+    CHAR buf[WIFIHAL_MAX_BUFFER];
+
+    memset(buf, 0, sizeof(buf));
+
+    if (vstate->enabled)
+    {
+        LOGT("wifi_getSSIDNameStatus() index=%d", ssidIndex);
+        ret = wifi_getSSIDNameStatus(ssidIndex, buf);
+        if (ret != RETURN_OK)
+        {
+            LOGW("wifi_getSSIDNameStatus() FAILED index=%d ret=%d", ssidIndex, ret);
+            return;
+        }
+        LOGT("wifi_getSSIDNameStatus() OK index=%d buf='%s'", ssidIndex, buf);
+    }
+    else // If ssid is disabled read SSID name from config
+    {
+        LOGT("wifi_getSSIDName() index=%d", ssidIndex);
+        ret = wifi_getSSIDName(ssidIndex, buf);
+        if (ret != RETURN_OK)
+        {
+            LOGW("wifi_getSSIDName() FAILED index=%d ret=%d", ssidIndex, ret);
+            return;
+        }
+        LOGT("wifi_getSSIDName() OK index=%d buf='%s'", ssidIndex, buf);
+    }
+
+    SCHEMA_SET_STR(vstate->ssid, buf);
+}
+
+static bool get_channel(INT ssidIndex, struct schema_Wifi_VIF_State *vstate)
+{
+    INT ret;
+    INT radio_idx = -1;
+    ULONG channel = 0;
+
+    LOGT("wifi_getSSIDRadioIndex() index=%d", ssidIndex);
+    ret = wifi_getSSIDRadioIndex(ssidIndex, &radio_idx);
+    if (ret != RETURN_OK)
+    {
+        LOGE("wifi_getSSIDRadioIndex() FAILED index=%d", ssidIndex);
+        return false;
+    }
+    LOGT("wifi_getSSIDRadioIndex() OK index=%d radio_idx=%d", ssidIndex, radio_idx);
+
+    LOGT("wifi_getRadioChannel() radio_index=%d", radio_idx);
+    ret = wifi_getRadioChannel(radio_idx, &channel);
+    if (ret != RETURN_OK)
+    {
+        LOGW("wifi_getRadioChannel() FAILED radio_idx=%d ret=%d", radio_idx, ret);
+        return true;
+    }
+    LOGT("wifi_getRadioChannel() OK radio_idx=%d channel=%lu", radio_idx, channel);
+
+    SCHEMA_SET_INT(vstate->channel, channel);
+    return true;
+}
+
+static void get_mac(INT ssidIndex, struct schema_Wifi_VIF_State *vstate)
+{
+    INT ret;
+    CHAR mac_str[WIFIHAL_MAX_BUFFER];
+
+    memset(mac_str, 0, sizeof(mac_str));
+    LOGT("wifi_getBaseBSSID() index=%d", ssidIndex);
+    ret = wifi_getBaseBSSID(ssidIndex, mac_str);
+    if (ret != RETURN_OK)
+    {
+        LOGW("wifi_getBaseBSSID() FAILED index=%d ret=%d", ssidIndex, ret);
+        return;
+    }
+    LOGT("wifi_getBaseBSSID() OK index=%d mac='%s'", ssidIndex, mac_str);
+
+    SCHEMA_SET_STR(vstate->mac, mac_str);
+}
+
+static void get_rrm(INT ssidIndex, struct schema_Wifi_VIF_State *vstate)
+{
+    INT ret;
+    BOOL rrm = false;
+
+    LOGT("wifi_getNeighborReportActivation() index=%d", ssidIndex);
+    ret = wifi_getNeighborReportActivation(ssidIndex, &rrm);
+    if (ret != RETURN_OK)
+    {
+        LOGW("wifi_getNeighborReportActivation() FAILED index=%d ret=%d", ssidIndex, ret);
+        return;
+    }
+    LOGT("wifi_getNeighborReportActivation() OK index=%d rrm=%d", ssidIndex, rrm);
+
+    SCHEMA_SET_INT(vstate->rrm, rrm);
+}
+
+static void get_btm(INT ssidIndex, struct schema_Wifi_VIF_State *vstate)
+{
+    INT ret;
+    BOOL btm = false;
+
+    LOGT("wifi_getBSSTransitionActivation() index=%d", ssidIndex);
+    ret = wifi_getBSSTransitionActivation(ssidIndex, &btm);
+    if (ret != RETURN_OK)
+    {
+        LOGW("wifi_getBSSTransitionActivation() FAILED index=%d ret=%d", ssidIndex, ret);
+        return;
+    }
+    LOGT("wifi_getBSSTransitionActivation() OK index=%d btm=%d", ssidIndex, btm);
+
+    SCHEMA_SET_INT(vstate->btm, btm);
+}
+
+static void get_uapsd_enable(INT ssidIndex, struct schema_Wifi_VIF_State *vstate)
+{
+    INT ret;
+    BOOL uapsd_enable = false;
+
+    LOGT("wifi_getApWmmUapsdEnable() index=%d", ssidIndex);
+    ret = wifi_getApWmmUapsdEnable(ssidIndex, &uapsd_enable);
+    if (ret != RETURN_OK)
+    {
+        LOGW("wifi_getApWmmUapsdEnable() FAILED index=%d ret=%d", ssidIndex, ret);
+        return;
+    }
+    LOGT("wifi_getApWmmUapsdEnable() OK index=%d uapsd_enable=%d", ssidIndex, uapsd_enable);
+
+    SCHEMA_SET_INT(vstate->uapsd_enable, uapsd_enable);
+}
+
+static void get_bridge(struct schema_Wifi_VIF_State *vstate)
+{
+    if (strlen(vif_bridge_name) > 0)
+    {
+        SCHEMA_SET_STR(vstate->bridge, vif_bridge_name);
+        LOGT("vstate->bridge set to '%s'", vstate->bridge);
+    }
+    else
+    {
+        vstate->bridge_exists = false;
+    }
+}
+
 bool vif_state_get(
         INT ssidIndex,
         struct schema_Wifi_VIF_State *vstate)
 {
-    ULONG                           lval;
-    CHAR                            buf[WIFIHAL_MAX_BUFFER];
-    BOOL                            bval;
-    char                            *str;
-    INT                             ret;
-    INT                             radio_idx;
-    char                            ssid_ifname[128];
-    BOOL                            rrm;
-    BOOL                            btm;
-
     memset(vstate, 0, sizeof(*vstate));
     schema_Wifi_VIF_State_mark_all_present(vstate);
     vstate->_partial_update = true;
     vstate->associated_clients_present = false;
     vstate->vif_config_present = false;
 
-    memset(ssid_ifname, 0, sizeof(ssid_ifname));
-    ret = wifi_getApName(ssidIndex, ssid_ifname);
-    if (ret != RETURN_OK)
-    {
-        LOGE("%s: cannot get ap name for index %d", __func__, ssidIndex);
-        return false;
-    }
+    if (get_if_name(ssidIndex, vstate) != true) return false;
+    if (get_channel(ssidIndex, vstate) != true) return false;
 
-    SCHEMA_SET_STR(vstate->if_name, target_unmap_ifname(ssid_ifname));
-
-    // mode (w/ exists)
-    SCHEMA_SET_STR(vstate->mode, "ap");
-
-    // enabled (w/ exists)
     SCHEMA_SET_INT(vstate->enabled, vif_is_enabled(ssidIndex));
-
-    // vlan_id (w/ exists)
-    SCHEMA_SET_INT(vstate->vlan_id, target_map_ifname_to_vlan(vstate->if_name));
-    if (vstate->vlan_id == 0)
-    {
-        vstate->vlan_id_exists = false;
-    }
-
-    // wds (w/ exists)
+    SCHEMA_SET_STR(vstate->mode, "ap");
     SCHEMA_SET_INT(vstate->wds, false);
 
-    // ap_bridge (w/ exists)
-    ret = wifi_getApIsolationEnable(ssidIndex, &bval);
-    if (ret == RETURN_OK)
-    {
-        SCHEMA_SET_INT(vstate->ap_bridge, bval ? false : true);
-    } else
-    {
-        LOGW("Cannot getApIsolationEnable for SSID index %d", ssidIndex);
-    }
+    get_ssid(ssidIndex, vstate);
+    get_ap_bridge(ssidIndex, vstate);
+    get_ssid_broadcast(ssidIndex, vstate);
+    get_mac(ssidIndex, vstate);
+    get_rrm(ssidIndex, vstate);
+    get_btm(ssidIndex, vstate);
+    get_uapsd_enable(ssidIndex, vstate);
+    get_bridge(vstate);
 
-    // vif_radio_idx (w/ exists)
-    SCHEMA_SET_INT(vstate->vif_radio_idx, target_map_ifname_to_vif_radio_idx(vstate->if_name));
-
-    // ssid_broadcast (w/ exists)
-    ret = wifi_getApSsidAdvertisementEnable(ssidIndex, &bval);
-    if (ret != RETURN_OK)
-    {
-        LOGW("%s: failed to get SSID Advertisement Enable", ssid_ifname);
-    }
-    else
-    {
-        str = c_get_str_by_key(map_enable_disable, bval);
-        if (strlen(str) == 0)
-        {
-            LOGW("%s: failed to decode ssid_enable (%d)", ssid_ifname, bval);
-        }
-        else
-        {
-            SCHEMA_SET_STR(vstate->ssid_broadcast, str);
-        }
-    }
-
-    // SSID (w/ exists)
-    memset(buf, 0, sizeof(buf));
-    ret = wifi_getSSIDName(ssidIndex, buf);
-    if (ret != RETURN_OK)
-    {
-        LOGW("%s: failed to get SSID", ssid_ifname);
-    }
-    else
-    {
-        SCHEMA_SET_STR(vstate->ssid, buf);
-    }
-
-    // security, security_keys, security_len
-    if (!security_to_state(ssidIndex, ssid_ifname, vstate))
-    {
-        LOGW("%s: cannot get security for %s", __func__, ssid_ifname);
-    }
+#ifdef CONFIG_RDK_LEGACY_SECURITY_SCHEMA
+    security_to_state(ssidIndex, vstate);
+#endif
+    get_security(ssidIndex, vstate);
+    acl_to_state(ssidIndex, vstate);
 
 #ifdef CONFIG_RDK_WPS_SUPPORT
     wps_to_state(ssidIndex, vstate);
 #endif
 
-    // mac_list_type (w/ exists)
-    // mac_list, mac_list_len
-    if (!acl_to_state(ssidIndex, ssid_ifname, vstate))
-    {
-        LOGW("%s: cannot get ACL for %s", __func__, ssid_ifname);
-    }
-
-    ret = wifi_getSSIDRadioIndex(ssidIndex, &radio_idx);
-    if (ret != RETURN_OK)
-    {
-        LOGE("%s: cannot get radio idx for SSID %s\n", __func__, ssid_ifname);
-        return false;
-    }
-
-    // SSID (w/ exists)
-    memset(buf, 0, sizeof(buf));
-    ret = wifi_getSSIDNameStatus(ssidIndex, buf);
-    if (ret != RETURN_OK)
-    {
-        LOGW("%s: Failed to get active SSID", ssid_ifname);
-    }
-    else
-    {
-        SCHEMA_SET_STR(vstate->ssid, buf);
-    }
-
-    // mac (w/ exists)
-    memset(buf, 0, sizeof(buf));
-    ret = wifi_getBaseBSSID(ssidIndex, buf);
-    if (ret != RETURN_OK)
-    {
-        LOGW("%s: Failed to get base BSSID (mac)", ssid_ifname);
-    }
-    else
-    {
-        SCHEMA_SET_STR(vstate->mac, buf);
-    }
-
-    // channel (w/ exists)
-    ret = wifi_getRadioChannel(radio_idx, &lval);
-    if (ret != RETURN_OK)
-    {
-        LOGW("%s: Failed to get channel from radio idx %d", ssid_ifname, radio_idx);
-    }
-    else
-    {
-        SCHEMA_SET_INT(vstate->channel, lval);
-    }
-
-    ret = wifi_getNeighborReportActivation(ssidIndex, &rrm);
-    if (ret != RETURN_OK)
-    {
-        LOGW("%s: failed to get RRM", ssid_ifname);
-    }
-    else
-    {
-        SCHEMA_SET_INT(vstate->rrm, rrm);
-    }
-
-    ret = wifi_getBSSTransitionActivation(ssidIndex, &btm);
-    if (ret != RETURN_OK)
-    {
-        LOGW("%s: failed to get BTM", ssid_ifname);
-    }
-    else
-    {
-        SCHEMA_SET_INT(vstate->btm, btm);
-    }
+#ifdef CONFIG_RDK_MULTI_AP_SUPPORT
+    multi_ap_to_state(ssidIndex, vstate);
+#endif
 
     return true;
 }
 
-static bool vif_ifname_to_idx(const char *ifname, INT *outSsidIndex)
+static void set_security_mode(INT ssid_index, const char *mode)
+{
+    INT ret;
+
+    LOGT("wifi_setApSecurityModeEnabled() index=%d mode='%s'", ssid_index,
+        mode);
+    ret = wifi_setApSecurityModeEnabled(ssid_index, (char *)mode);
+    if (ret != RETURN_OK)
+    {
+        LOGE("wifi_setApSecurityModeEnabled() FAILED index=%d mode='%s'",
+            ssid_index, mode);
+    }
+
+    LOGT("wifi_setApSecurityModeEnabled() OK index=%d mode='%s'", ssid_index,
+        mode);
+}
+
+static bool set_password(
+        INT ssid_index,
+        const struct schema_Wifi_VIF_Config *vconf,
+        MeshWifiAPSecurity *mesh_security_data)
+{
+    INT ret;
+    char passphrase[WIFIHAL_MAX_BUFFER];
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+    wifi_key_multi_psk_t *keys = NULL;
+    int i;
+#endif
+
+    memset(passphrase, 0, sizeof(passphrase));
+    STRSCPY(passphrase, vconf->wpa_psks[0]); // Needed as RDK HAL discards const
+    LOGT("wifi_setApSecurityKeyPassphrase() index=%d", ssid_index);
+    ret = wifi_setApSecurityKeyPassphrase(ssid_index, passphrase);
+    if (ret != RETURN_OK)
+    {
+        LOGW("wifi_setApSecurityKeyPassphrase() FAILED index=%d", ssid_index);
+        return false;
+    }
+    LOGT("wifi_setApSecurityKeyPassphrase() OK index=%d", ssid_index);
+
+    STRSCPY(mesh_security_data->passphrase, passphrase);
+
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+    if (vconf->wpa_psks_len == 1) return true;
+
+    keys = calloc(vconf->wpa_psks_len - 1, sizeof(wifi_key_multi_psk_t));
+    if (keys == NULL)
+    {
+        LOGE("%s: Failed to allocate memory for multi-psk keys, index=%d", __func__,
+                ssid_index);
+        return false;
+    }
+
+    for (i = 1; i < vconf->wpa_psks_len; i++)
+    {
+       STRSCPY(keys[i - 1].wifi_keyId, vconf->wpa_psks_keys[i]);
+       STRSCPY(keys[i - 1].wifi_psk, vconf->wpa_psks[i]);
+       // MAC set to 00:00:00:00:00:00
+    }
+    LOGT("wifi_pushMultiPskKeys() index=%d", ssid_index);
+    ret = wifi_pushMultiPskKeys(ssid_index, keys, vconf->wpa_psks_len - 1);
+    if (ret != RETURN_OK)
+    {
+        LOGW("wifi_pushMultiPskKeys() FAILED index=%d", ssid_index);
+    }
+    LOGT("wifi_pushMultiPskKeys() OK index=%d", ssid_index);
+
+    free(keys);
+#endif
+
+    return true;
+}
+
+static void set_security(
+        INT ssid_index,
+        const struct schema_Wifi_VIF_Config *vconf,
+        const struct schema_Wifi_VIF_Config_flags *changed)
+{
+    const char *key_mgmt = NULL;
+    MeshWifiAPSecurity mesh_security_data;
+    bool send_sync = false;
+
+    memset(&mesh_security_data, 0, sizeof(mesh_security_data));
+
+    // Prepare sync message in case it needs to be updated and sent
+    security_ovsdb_to_syncmsg(ssid_index, vconf, &mesh_security_data);
+
+    if (changed->wpa && vconf->wpa == 0)
+    {
+        set_security_mode(ssid_index, RDK_SECURITY_KEY_MGMT_OPEN);
+        STRSCPY(mesh_security_data.secMode, RDK_SECURITY_KEY_MGMT_OPEN);
+        send_sync = true;
+        goto exit;
+    }
+
+    if (changed->wpa_key_mgmt)
+    {
+        key_mgmt = security_key_mgmt_ovsdb_to_hal(vconf);
+        if (!key_mgmt) return;
+        set_security_mode(ssid_index, key_mgmt);
+        send_sync = true;
+    }
+
+    if (changed->wpa_psks && vconf->wpa_psks_len >= 1)
+    {
+        if (!set_password(ssid_index, vconf, &mesh_security_data)) goto exit;
+        send_sync = true;
+    }
+
+exit:
+    if (send_sync)
+    {
+        if (!sync_send_security_change(ssid_index, vconf->if_name, &mesh_security_data))
+        {
+            LOGW("%s: Failed to sync security change", vconf->if_name);
+        }
+    }
+}
+
+bool vif_ifname_to_idx(const char *ifname, INT *outSsidIndex)
 {
     INT ret;
     ULONG s, snum;
@@ -1112,6 +1603,222 @@ static bool vif_ifname_to_idx(const char *ifname, INT *outSsidIndex)
     return true;
 }
 
+static void set_ssid_broadcast(INT ssid_index, const struct schema_Wifi_VIF_Config *vconf)
+{
+    c_item_t *citem;
+    INT ret;
+    BOOL enable = false;
+    const char *ssid_ifname = target_map_ifname((char *)vconf->if_name);
+
+    if ((citem = c_get_item_by_str(map_enable_disable, vconf->ssid_broadcast)))
+    {
+        enable = citem->key ? TRUE : FALSE;
+        LOGT("wifi_setApSsidAdvertisementEnable index=%d enable=%d", ssid_index, enable);
+        ret = wifi_setApSsidAdvertisementEnable(ssid_index, enable);
+        LOGT("wifi_setApSsidAdvertisementEnable index=%d enable=%d ret=%d", ssid_index,
+                enable, ret);
+        if (ret != RETURN_OK)
+        {
+            LOGW("%s: Failed to set SSID Broadcast to '%d'", ssid_ifname, enable);
+            return;
+        }
+#ifndef CONFIG_RDK_DISABLE_SYNC
+        if (!sync_send_ssid_broadcast_change(ssid_index, enable))
+        {
+            LOGW("%s: Failed to sync SSID Broadcast change to %s",
+                    ssid_ifname, (enable ? "true" : "false"));
+        }
+#endif
+
+        LOGI("%s: Updated SSID Broadcast to %d", ssid_ifname, enable);
+        return;
+    }
+
+    LOGW("%s: Failed to decode ssid_broadcast \"%s\"",
+            ssid_ifname, vconf->ssid_broadcast);
+}
+
+static void set_ssid(INT ssid_index, const struct schema_Wifi_VIF_Config *vconf)
+{
+    INT ret;
+    char tmp[256];
+    const char *ssid_ifname = target_map_ifname((char *)vconf->if_name);
+
+    if (strlen(vconf->ssid) == 0)
+    {
+        LOGW("%s: vconf->ssid string is empty", ssid_ifname);
+        return;
+    }
+
+    memset(tmp, 0, sizeof(tmp));
+    snprintf(tmp, sizeof(tmp) - 1, "%s", vconf->ssid);
+    LOGT("wifi_setSSIDName() index=%d ssid='%s'", ssid_index, tmp);
+    ret = wifi_setSSIDName(ssid_index, tmp);
+    LOGT("wifi_setSSIDName index=%d ssid='%s' ret=%d", ssid_index, tmp,
+            ret);
+    if (ret != RETURN_OK)
+    {
+        LOGW("%s: Failed to set new SSID '%s'", ssid_ifname, tmp);
+        return;
+    }
+
+    LOGI("%s: SSID updated to '%s'", ssid_ifname, tmp);
+#ifndef CONFIG_RDK_DISABLE_SYNC
+    if (!sync_send_ssid_change(ssid_index, ssid_ifname, vconf->ssid))
+    {
+        LOGE("%s: Failed to sync SSID change to '%s'", ssid_ifname, vconf->ssid);
+    }
+#endif
+}
+
+#ifdef CONFIG_RDK_LEGACY_SECURITY_SCHEMA
+static void set_security_legacy(INT ssid_index, const struct schema_Wifi_VIF_Config *vconf)
+{
+    INT ret;
+    MeshWifiAPSecurity sec;
+    const char *ssid_ifname = target_map_ifname((char *)vconf->if_name);
+
+    if (vconf->security_len == 0) return;
+
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+    if (!vif_security_set_multi_psk_keys_from_conf(ssid_index, vconf))
+    {
+        LOGW("%s: Failed to set multi-psk config", ssid_ifname);
+    }
+
+    if (!vif_security_oftag_write(ssid_index, vconf))
+    {
+        LOGW("%s: Failed to save oftags", ssid_ifname);
+    }
+#endif
+
+    memset(&sec, 0, sizeof(sec));
+    if (!security_to_syncmsg(vconf, &sec))
+    {
+        LOGW("%s: Failed to convert security for sync", ssid_ifname);
+        return;
+    }
+
+    sec.index = ssid_index;
+
+    LOGT("wifi_setApSecurityModeEnabled() index=%d mode='%s'", sec.index, sec.secMode);
+    ret = wifi_setApSecurityModeEnabled(sec.index, sec.secMode);
+    LOGT("wifi_setApSecurityModeEnabled() index=%d mode='%s' ret=%d", sec.index,
+            sec.secMode, ret);
+    if (ret != RETURN_OK)
+    {
+        LOGW("%s: Failed to set new security mode to '%s'",
+                ssid_ifname, sec.secMode);
+        return;
+    }
+
+    if (strlen(sec.passphrase) == 0)
+    {
+        LOGW("%s: security_to_syncmsg returned empty sec.passphrase", ssid_ifname);
+    }
+    else
+    {
+        LOGT("wifi_setApSecurityKeyPassphrase() index=%d", sec.index);
+        ret = wifi_setApSecurityKeyPassphrase(sec.index, sec.passphrase);
+        LOGT("wifi_setApSecurityKeyPassphrase() index=%d ret=%d",
+                ssid_index, ret);
+        if (ret != RETURN_OK)
+        {
+            LOGW("%s: Failed to set new security passphrase", ssid_ifname);
+        }
+    }
+
+    LOGI("%s: Security settings updated", ssid_ifname);
+
+#ifndef CONFIG_RDK_DISABLE_SYNC
+    if (!sync_send_security_change(ssid_index, ssid_ifname, &sec))
+    {
+        LOGW("%s: Failed to sync security change", ssid_ifname);
+    }
+#endif
+}
+#endif
+
+static void set_enabled(INT ssid_index, const struct schema_Wifi_VIF_Config *vconf)
+{
+    INT ret;
+    const char *ssid_ifname = target_map_ifname((char *)vconf->if_name);
+
+    LOGT("wifi_setSSIDEnable() index=%d enabled=%d", ssid_index, vconf->enabled);
+    ret = wifi_setSSIDEnable(ssid_index, vconf->enabled);
+    LOGT("wifi_setSSIDEnable() index=%d enabled=%d ret=%d", ssid_index,
+            vconf->enabled, ret);
+    if (ret != RETURN_OK)
+    {
+        LOGW("%s: Failed to change enable to %d", ssid_ifname, vconf->enabled);
+    }
+}
+
+static void set_ap_bridge(INT ssid_index, const struct schema_Wifi_VIF_Config *vconf)
+{
+    INT ret;
+    BOOL enable;
+    const char *ssid_ifname = target_map_ifname((char *)vconf->if_name);
+
+    enable = vconf->ap_bridge ? false : true;
+    LOGT("wifi_setApIsolationEnable() index=%d enable=%d", ssid_index, enable);
+    ret = wifi_setApIsolationEnable(ssid_index, enable);
+    LOGT("wifi_setApIsolationEnable() index=%d enable=%d ret=%d", ssid_index,
+            enable, ret);
+    if (ret != RETURN_OK)
+    {
+        LOGW("%s: Failed to change ap_bridge to %d", ssid_ifname, vconf->ap_bridge);
+    }
+}
+
+static void set_rrm(INT ssid_index, const struct schema_Wifi_VIF_Config *vconf)
+{
+    INT ret;
+    const char *ssid_ifname = target_map_ifname((char *)vconf->if_name);
+
+    LOGT("wifi_setNeighborReportActivation() index=%d rrm=%d", ssid_index,
+            vconf->rrm);
+    ret = wifi_setNeighborReportActivation(ssid_index, vconf->rrm);
+    LOGT("wifi_setNeighborReportActivation() index=%d rrm=%d ret=%d", ssid_index,
+            vconf->rrm, ret);
+    if (ret != RETURN_OK)
+    {
+        LOGW("%s: Failed to change rrm to %d", ssid_ifname, vconf->rrm);
+    }
+}
+
+static void set_btm(INT ssid_index, const struct schema_Wifi_VIF_Config *vconf)
+{
+    INT ret;
+    const char *ssid_ifname = target_map_ifname((char *)vconf->if_name);
+
+    LOGT("wifi_setBSSTransitionActivation() index=%d btm=%d", ssid_index,
+            vconf->btm);
+    ret = wifi_setBSSTransitionActivation(ssid_index, vconf->btm);
+    LOGT("wifi_setBSSTransitionActivation() index=%d btm=%d ret=%d", ssid_index,
+            vconf->btm, ret);
+    if (ret != RETURN_OK)
+    {
+        LOGW("%s: Failed to change btm to %d", ssid_ifname, vconf->btm);
+    }
+}
+
+static void set_uapsd_enable(INT ssid_index, const struct schema_Wifi_VIF_Config *vconf)
+{
+    INT ret;
+    const char *ssid_ifname = target_map_ifname((char *)vconf->if_name);
+
+    LOGT("wifi_setApWmmUapsdEnable() index=%d uapsd_enable=%d", ssid_index,
+            vconf->uapsd_enable);
+    ret = wifi_setApWmmUapsdEnable(ssid_index, vconf->uapsd_enable);
+    LOGT("wifi_setApWmmUapsdEnable() index=%d uapsd_enable=%d ret=%d", ssid_index,
+            vconf->uapsd_enable, ret);
+    if (ret != RETURN_OK)
+    {
+        LOGW("%s: Failed to change uapsd_enable to %d", ssid_ifname, vconf->uapsd_enable);
+    }
+}
+
 bool target_vif_config_set2(
         const struct schema_Wifi_VIF_Config *vconf,
         const struct schema_Wifi_Radio_Config *rconf,
@@ -1120,190 +1827,48 @@ bool target_vif_config_set2(
         int num_cconfs)
 {
     INT ssid_index;
-    BOOL bval;
-    INT ret;
-    c_item_t *citem;
-    char tmp[256];
-    MeshWifiAPSecurity sec;
-    const char *ssid_ifname = target_map_ifname((char *)vconf->if_name);
 
-    if (!vif_ifname_to_idx(ssid_ifname, &ssid_index))
+    if (!vif_ifname_to_idx(target_map_ifname((char *)vconf->if_name), &ssid_index))
     {
-        LOGE("%s: cannot get index for %s", __func__, ssid_ifname);
+        LOGE("%s: cannot get index for %s", __func__, target_map_ifname((char *)vconf->if_name));
         return false;
     }
 
-    acl_apply(ssid_index, ssid_ifname, vconf);
+    if (changed->enabled) set_enabled(ssid_index, vconf);
+#ifdef CONFIG_RDK_LEGACY_SECURITY_SCHEMA
+    if (changed->security) set_security_legacy(ssid_index, vconf);
+#endif
+    if (changed->ap_bridge) set_ap_bridge(ssid_index, vconf);
+    if (changed->rrm) set_rrm(ssid_index, vconf);
+    if (changed->btm) set_btm(ssid_index, vconf);
+    if (changed->uapsd_enable) set_uapsd_enable(ssid_index, vconf);
+    if (changed->ssid_broadcast) set_ssid_broadcast(ssid_index, vconf);
+    if (changed->ssid) set_ssid(ssid_index, vconf);
+    /* The 'bridge' field in VIF may be used as an input to hostapd config.
+     * However, none of RDK HAL implementations actually use it as a parameter.
+     * If any adjustment to bridge name is needed it's handled by the platform
+     * itself as a part of initial configuration.
+     * We keep track of this field (if set by cloud) for compatibility reasons.
+     * If for any reason the bridge name should be applied, the new HAL should be
+     * created for that purpose. For now, the value is stored in static variable.
+     */
+    if (changed->bridge) STRSCPY(vif_bridge_name, vconf->bridge);
 
-    if (changed->ssid_broadcast)
-    {
-        if ((citem = c_get_item_by_str(map_enable_disable, vconf->ssid_broadcast)))
-        {
-            bval = citem->key ? TRUE : FALSE;
-            ret = wifi_setApSsidAdvertisementEnable(ssid_index, bval);
-            LOGD("[WIFI_HAL SET] wifi_setApSsidAdvertisementEnable(%d, %d) = %d",
-                                                    ssid_index, bval, ret);
-            if (ret != RETURN_OK)
-            {
-                LOGW("%s: Failed to set SSID Broadcast to '%d'", ssid_ifname, bval);
-            }
-            else
-            {
-                if (!sync_send_ssid_broadcast_change(ssid_index, bval))
-                {
-                    LOGW("%s: Failed to sync SSID Broadcast change to %s",
-                        ssid_ifname, (bval ? "true" : "false"));
-                }
-            }
-
-            LOGI("%s: Updated SSID Broadcast to %d", ssid_ifname, bval);
-        }
-        else
-        {
-            LOGW("%s: Failed to decode ssid_broadcast \"%s\"",
-                 ssid_ifname, vconf->ssid_broadcast);
-        }
-    }
-
-    if (changed->vlan_id)
-    {
-        if (!target_map_update_vlan(vconf->if_name, vconf->vlan_id))
-        {
-            LOGW("%s: Failed to update VLAN to %u", ssid_ifname, vconf->vlan_id);
-        }
-        else
-        {
-            LOGI("%s: Updated VLAN to %u", ssid_ifname, vconf->vlan_id);
-        }
-    }
-
-    if (strlen(vconf->ssid) == 0)
-    {
-        LOGW("%s: vconf->ssid string is empty", ssid_ifname);
-    }
-    else if (changed->ssid)
-    {
-        memset(tmp, 0, sizeof(tmp));
-        snprintf(tmp, sizeof(tmp) - 1, "%s", vconf->ssid);
-        ret = wifi_setSSIDName(ssid_index, tmp);
-        LOGD("[WIFI_HAL SET] wifi_setSSIDName(%d, \"%s\") = %d",
-                               ssid_index, tmp, ret);
-        if (ret != RETURN_OK)
-        {
-            LOGW("%s: Failed to set new SSID '%s'", ssid_ifname, tmp);
-        }
-        else
-        {
-            LOGI("%s: SSID updated to '%s'", ssid_ifname, tmp);
-            if (!sync_send_ssid_change(ssid_index, ssid_ifname, vconf->ssid))
-            {
-                LOGE("%s: Failed to sync SSID change to '%s'", ssid_ifname, vconf->ssid);
-            }
-        }
-    }
-
+    acl_apply(ssid_index, vconf);
 #ifdef CONFIG_RDK_WPS_SUPPORT
     vif_config_set_wps(ssid_index, vconf, changed, rconf->if_name);
 #endif
 
-    if (changed->security && vconf->security_len)
-    {
-#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
-        if (!vif_security_set_multi_psk_keys_from_conf(ssid_index, vconf))
-        {
-            LOGW("%s: Failed to set multi-psk config", ssid_ifname);
-        }
-
-        if (!vif_security_oftag_write(ssid_index, vconf))
-        {
-            LOGW("%s: Failed to save oftags", ssid_ifname);
-        }
+#ifdef CONFIG_RDK_MULTI_AP_SUPPORT
+    vif_config_set_multi_ap(ssid_index, vconf->multi_ap, changed);
 #endif
-        memset(&sec, 0, sizeof(sec));
-        if (!security_to_syncmsg(vconf, &sec))
-        {
-            LOGW("%s: Failed to convert security for sync", ssid_ifname);
-        }
-        else
-        {
-            sec.index = ssid_index;
 
-            ret = wifi_setApSecurityModeEnabled(sec.index, sec.secMode);
-            LOGD("[WIFI_HAL SET] wifi_setApSecurityModeEnabled(%d, \"%s\") = %d",
-                 sec.index, sec.secMode, ret);
-            if (ret != RETURN_OK)
-            {
-                LOGW("%s: Failed to set new security mode to '%s'",
-                     ssid_ifname, sec.secMode);
-            }
-            else
-            {
-                if (strlen(sec.passphrase) == 0)
-                {
-                    LOGW("%s: security_to_syncmsg returned empty sec.passphrase", ssid_ifname);
-                }
-                else
-                {
-                    ret = wifi_setApSecurityKeyPassphrase(sec.index, sec.passphrase);
-                    LOGD("[WIFI_HAL SET] wifi_setApSecurityKeyPassphrase(%d, \"%s\") = %d",
-                         sec.index, sec.passphrase, ret);
-                    if (ret != RETURN_OK)
-                    {
-                        LOGW("%s: Failed to set new security passphrase", ssid_ifname);
-                    }
-                }
-                LOGI("%s: Security settings updated", ssid_ifname);
+    set_security(ssid_index, vconf, changed);
 
-                if (!sync_send_security_change(ssid_index, ssid_ifname, &sec))
-                {
-                    LOGW("%s: Failed to sync security change", ssid_ifname);
-                }
-            }
-        }
-    }
-
-
-    if (changed->enabled)
-    {
-        ret = wifi_setSSIDEnable(ssid_index, vconf->enabled);
-        LOGD("[WIFI_HAL SET] wifi_setSSIDEnable(%d, %d) = %d",
-                                 ssid_index, vconf->enabled, ret);
-        if (ret != RETURN_OK)
-        {
-            LOGW("%s: Failed to change enable to %d", ssid_ifname, vconf->enabled);
-        }
-    }
-
-    if (changed->ap_bridge)
-    {
-        ret = wifi_setApIsolationEnable(ssid_index, vconf->ap_bridge ? false : true);
-        LOGD("[WIFI_HAL SET] wifi_setApIsolationEnable(%d, %d) = %d",
-                                        ssid_index, !vconf->ap_bridge, ret);
-        if (ret != RETURN_OK)
-        {
-            LOGW("%s: Failed to change ap_bridge to %d", ssid_ifname, vconf->ap_bridge);
-        }
-    }
-
-    if (changed->rrm)
-    {
-        if (wifi_setNeighborReportActivation(ssid_index, vconf->rrm) != RETURN_OK)
-        {
-            LOGW("%s: Failed to change rrm to %d", ssid_ifname, vconf->rrm);
-        }
-    }
-
-    if (changed->btm)
-    {
-        if (wifi_setBSSTransitionActivation(ssid_index, vconf->btm) != RETURN_OK)
-        {
-            LOGW("%s: Failed to change btm to %d", ssid_ifname, vconf->btm);
-        }
-    }
-
+    LOGT("wifi_applySSIDSettings() index=%d", ssid_index);
     if (wifi_applySSIDSettings(ssid_index) != RETURN_OK)
     {
-        LOGW("%s: Failed to apply SSID settings", ssid_ifname);
+        LOGW("Failed to apply SSID settings for index=%d", ssid_index);
     }
 
     return vif_state_update(ssid_index);

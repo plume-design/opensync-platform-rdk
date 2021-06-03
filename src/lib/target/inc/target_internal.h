@@ -35,7 +35,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "osync_hal.h"
 #include "osn_dhcp.h"
 
+#ifndef CONFIG_RDK_DISABLE_SYNC
 #include <mesh/meshsync_msgs.h>  // needed only by sync_send_security_change()
+#endif
 
 #ifndef __WIFI_HAL_H__
 #include "ccsp/wifi_hal.h"
@@ -192,8 +194,11 @@ void                 sync_init(sync_mgr_t mgr,
 bool                 sync_cleanup(void);
 bool                 sync_send_ssid_change(INT ssid_index, const char *ssid_ifname,
                                     const char *new_ssid);
+#ifndef CONFIG_RDK_DISABLE_SYNC
 bool                 sync_send_security_change(INT ssid_index, const char *ssid_ifname,
                                     MeshWifiAPSecurity *sec);
+#endif
+
 bool                 sync_send_status(radio_cloud_mode_t mode);
 bool                 sync_send_channel_change(INT radio_index, UINT channel);
 bool                 sync_send_ssid_broadcast_change(INT ssid_index, BOOL ssid_broadcast);
@@ -206,6 +211,9 @@ bool                 vif_copy_to_config(INT ssidIndex, struct schema_Wifi_VIF_St
 bool                 vif_external_ssid_update(const char *ssid, int ssid_index);
 bool                 vif_external_security_update(int ssid_index, const char *passphrase,
                                         const char *secMode);
+bool                 vif_get_radio_ifname(INT ssidIndex, char *radio_ifname,
+                                        size_t radio_ifname_size);
+bool                 vif_ifname_to_idx(const char *ifname, INT *outSsidIndex);
 
 struct               target_radio_ops;
 bool                 clients_hal_init(const struct target_radio_ops *rops);
@@ -224,6 +232,13 @@ void                 vif_config_set_wps(INT ssid_index,
                                         const struct schema_Wifi_VIF_Config_flags *changed,
                                         const char *radio_ifname);
 
+void                multi_ap_hal_init();
+void                vif_config_set_multi_ap(INT ssid_index,
+                                        const char *multi_ap,
+                                        const struct schema_Wifi_VIF_Config_flags *changed);
+void                multi_ap_to_state(INT ssid_index,
+                                        struct schema_Wifi_VIF_State *vstate);
+bool                vap_controlled(const char *ifname);
 
 extern struct ev_loop   *wifihal_evloop;
 

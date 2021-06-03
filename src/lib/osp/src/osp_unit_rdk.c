@@ -192,3 +192,27 @@ bool osp_unit_vendor_name_get(char *buff, size_t buffsz)
 {
     return false;
 }
+
+bool osp_unit_dhcpc_hostname_get(void *buff, size_t buffsz)
+{
+    char serial_num[buffsz];
+    char model_name[buffsz];
+
+    memset(serial_num, 0, (sizeof(char) * buffsz));
+    memset(model_name, 0, (sizeof(char) * buffsz));
+
+    if (!osp_unit_serial_get(serial_num, sizeof(serial_num)))
+    {
+        LOG(ERR, "Unable to get serial number");
+        return false;
+    }
+    if (!osp_unit_model_get(model_name, sizeof(model_name)))
+    {
+        LOG(ERR, "Unable to get model name");
+        return false;
+    }
+
+    snprintf(buff, buffsz, "%s_%s", serial_num, model_name);
+
+    return true;
+}

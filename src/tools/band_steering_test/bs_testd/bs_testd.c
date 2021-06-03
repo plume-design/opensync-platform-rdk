@@ -643,6 +643,80 @@ static bool handle_clientRemove(char *params)
     return wifi_steering_clientRemove(steeringgroupIndex, apIndex, client_mac);
 }
 
+static bool handle_getBSSTransitionActivation(char *params)
+{
+    char *token;
+    INT apIndex;
+    INT ret;
+    BOOL btm;
+
+    token = strsep(&params, ";");
+    LOGD("apIndex=%s\n", token);
+    apIndex = (INT)strtol(token, NULL, 10);
+
+    LOGI("wifi_getBSSTransitionActivation()\n\tapIndex=%d\n", apIndex);
+    ret = wifi_getBSSTransitionActivation(apIndex, &btm);
+    if (ret != RETURN_OK) return ret;
+
+    LOGI("BTM = %d (%s)", btm, btm ? "enabled" : "disabled");
+    return ret;
+}
+
+static bool handle_getNeighborReportActivation(char *params)
+{
+    char *token;
+    INT apIndex;
+    INT ret;
+    BOOL rrm;
+
+    token = strsep(&params, ";");
+    LOGD("apIndex=%s\n", token);
+    apIndex = (INT)strtol(token, NULL, 10);
+
+    LOGI("wifi_getNeighborReportActivation()\n\tapIndex=%d\n", apIndex);
+    ret = wifi_getNeighborReportActivation(apIndex, &rrm);
+    if (ret != RETURN_OK) return ret;
+
+    LOGI("RRM = %d (%s)", rrm, rrm ? "enabled" : "disabled");
+    return ret;
+}
+
+static bool handle_setBSSTransitionActivation(char *params)
+{
+    char *token;
+    INT apIndex;
+    BOOL btm;
+
+    token = strsep(&params, ";");
+    LOGD("apIndex=%s\n", token);
+    apIndex = (INT)strtol(token, NULL, 10);
+
+    token = strsep(&params, ";");
+    LOGD("btm=%s\n", token);
+    btm = (INT)strtol(token, NULL, 10);
+
+    LOGI("wifi_setBSSTransitionActivation()\n\tapIndex=%d\n\tbtm=%d\n", apIndex, btm);
+    return wifi_setBSSTransitionActivation(apIndex, btm);
+}
+
+static bool handle_setNeighborReportActivation(char *params)
+{
+    char *token;
+    INT apIndex;
+    BOOL rrm;
+
+    token = strsep(&params, ";");
+    LOGD("apIndex=%s\n", token);
+    apIndex = (INT)strtol(token, NULL, 10);
+
+    token = strsep(&params, ";");
+    LOGD("btm=%s\n", token);
+    rrm = (INT)strtol(token, NULL, 10);
+
+    LOGI("wifi_setNeighborReportActivation()\n\tapIndex=%d\n\trrm=%d\n", apIndex, rrm);
+    return wifi_setNeighborReportActivation(apIndex, rrm);
+}
+
 static int dispatch_cmd(const char *cmd_name, char *params)
 {
     LOGD("calling %s\n", cmd_name);
@@ -692,6 +766,26 @@ static int dispatch_cmd(const char *cmd_name, char *params)
     if (!strcmp(cmd_name, "wifi_steering_clientRemove"))
     {
         return handle_clientRemove(params);
+    }
+
+    if (!strcmp(cmd_name, "wifi_getBSSTransitionActivation"))
+    {
+        return handle_getBSSTransitionActivation(params);
+    }
+
+    if (!strcmp(cmd_name, "wifi_getNeighborReportActivation"))
+    {
+        return handle_getNeighborReportActivation(params);
+    }
+
+    if (!strcmp(cmd_name, "wifi_setBSSTransitionActivation"))
+    {
+        return handle_setBSSTransitionActivation(params);
+    }
+
+    if (!strcmp(cmd_name, "wifi_setNeighborReportActivation"))
+    {
+        return handle_setNeighborReportActivation(params);
     }
 
     LOGE("unknown cmd: >>%s<<\n", cmd_name);

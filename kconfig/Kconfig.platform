@@ -17,17 +17,49 @@ config RDK_WAN_BRIDGE_NAME
     help
         WAN bridge name that will be used
 
-config RDK_BHAUL_24_IFNAME
+config RDK_HOME_AP_24_IFNAME
+    string "Home AP 2.4 GHz interface name"
+    default "home-ap-24"
+    help
+        Home AP 2.4 GHz name that will be used
+
+config RDK_HOME_AP_50_IFNAME
+    string "Home AP 5 GHz interface name"
+    default "hom-ap-50"
+    help
+        Backhaul AP 5 GHz name that will be used
+
+config RDK_BHAUL_AP_24_IFNAME
     string "Backhaul AP 2.4 GHz interface name"
     default "bhaul-ap-24"
     help
         Backhaul AP 2.4 GHz name that will be used
 
-config RDK_BHAUL_50_IFNAME
+config RDK_BHAUL_AP_50_IFNAME
     string "Backhaul AP 5 GHz interface name"
     default "bhaul-ap-50"
     help
         Backhaul AP 5 GHz name that will be used
+
+config RDK_ONBOARD_AP_24_IFNAME
+    string "Onboard AP 2.4 GHz interface name"
+    default "onboard-ap-24"
+    help
+        Onboard AP 2.4 GHz name that will be used
+
+config RDK_ONBOARD_AP_50_IFNAME
+    string "Onboard AP 5 GHz interface name"
+    default "onboard-ap-50"
+    help
+        Onboard AP 5 GHz name that will be used
+
+config RDK_CONTROL_ALL_VAPS
+    bool "Allow OpenSync to control all VAP interfaces"
+    help
+        Select this option if you want to see all the Wifi interfaces
+        in the Wifi_VIF_Config and Wifi_VIF_State tables.
+        Do not use this option if there are some interfaces that are
+        controlled only outside of OpenSync framework.
 
 config RDK_LAN_ETH_IFNAME
     string "LAN ethernet interface name"
@@ -78,11 +110,36 @@ config RDK_MULTI_PSK_SUPPORT
         wifi_pushMultiPskKeys(),
         wifi_getMultiPskKeys()
 
+config RDK_DISABLE_SYNC
+    bool "RDK disable sync with MeshAgent"
+    default n
+
 config RDK_WPS_SUPPORT
     bool "WPS support"
     default n
     help
         This feature enables WPS support.
+
+config RDK_MULTI_AP_SUPPORT
+    bool "Multi AP support"
+    default n
+    help
+        This feature enables Multi AP support.
+
+config RDK_MGMT_FRAME_CB_SUPPORT
+    bool "Management frames callback support"
+    default n
+    help
+        This feature uses RDK HAL API to provide to
+        OpenSync received raw management frames. OpenSync
+        parses those frames for Band Steering purpose.
+
+config RDK_LEGACY_SECURITY_SCHEMA
+    bool "Legacy OVSDB schema for security"
+    default n
+    help
+        Needed only if OpenSync runs on a deployment that doesn't
+        support new OVSDB schema for security (OpenSync < 2.4)
 
 menu "OSync HAL API"
 
@@ -168,42 +225,6 @@ choice
             Default implementation of osync_hal_inet_set_iface_config()
 
     osource "vendor/*/kconfig/Kconfig.osync_hal.inet_set_iface_config_backend"
-endchoice
-
-choice
-    prompt "osync_hal_inet_create_gre()"
-    default OSYNC_HAL_USE_DEFAULT_INET_CREATE_GRE
-        config OSYNC_HAL_USE_DEFAULT_INET_CREATE_GRE
-        bool "osync_hal_inet_create_gre() default"
-
-        help
-            Default implementation of osync_hal_inet_create_gre()
-
-    osource "vendor/*/kconfig/Kconfig.osync_hal.inet_create_gre_backend"
-endchoice
-
-choice
-    prompt "osync_hal_inet_destroy_gre()"
-    default OSYNC_HAL_USE_DEFAULT_INET_DESTROY_GRE
-        config OSYNC_HAL_USE_DEFAULT_INET_DESTROY_GRE
-        bool "osync_hal_inet_destroy_gre() default"
-
-        help
-            Default implementation of osync_hal_inet_destroy_gre()
-
-    osource "vendor/*/kconfig/Kconfig.osync_hal.inet_destroy_gre_backend"
-endchoice
-
-choice
-    prompt "osync_hal_inet_add_to_bridge()"
-    default OSYNC_HAL_USE_DEFAULT_INET_ADD_TO_BRIDGE
-        config OSYNC_HAL_USE_DEFAULT_INET_ADD_TO_BRIDGE
-        bool "osync_hal_inet_add_to_bridge()"
-
-        help
-            Default implementation of osync_hal_inet_add_to_bridge()
-
-    osource "vendor/*/kconfig/Kconfig.osync_hal.inet_add_to_bridge_backend"
 endchoice
 
 choice
