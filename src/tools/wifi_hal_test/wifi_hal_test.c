@@ -936,6 +936,76 @@ void test_chan_eventRegister(int radioIndex)
     pause();
 }
 
+void test_setNeighborReports(int apIndex, int neighbor_num, char **neighbor_list)
+{
+    int i, j;
+    char *val;
+    char neighbor_record[256];
+    wifi_NeighborReport_t *neighborReports;
+    INT ret;
+    mac_address_t mac;
+
+    neighborReports = calloc(neighbor_num, sizeof(neighborReports));
+    if (!neighborReports)
+    {
+        printf("Failed to allocate memory");
+        exit(-1);
+    }
+
+    for (i = 0; i < neighbor_num; i++)
+    {
+        j = 0;
+        memset(neighbor_record, 0, sizeof(neighbor_record));
+        strncpy(neighbor_record, neighbor_list[i], sizeof(neighbor_record));
+        memset(mac, 0, sizeof(mac));
+        val = strtok(neighbor_record, ";");
+        while (val != NULL)
+        {
+            if (j == 0)
+            {
+                parse_mac(val, &mac);
+                neighborReports[i].bssid[0] = mac[0];
+                neighborReports[i].bssid[1] = mac[1];
+                neighborReports[i].bssid[2] = mac[2];
+                neighborReports[i].bssid[3] = mac[3];
+                neighborReports[i].bssid[4] = mac[4];
+                neighborReports[i].bssid[5] = mac[5];
+            }
+            else if (j == 1)
+            {
+                neighborReports[i].info = strtol(val, NULL, 16);
+            }
+            else if (j == 2)
+            {
+                neighborReports[i].opClass = strtol(val, NULL, 16);
+            }
+            else if (j == 3)
+            {
+                neighborReports[i].channel = strtol(val, NULL, 16);
+            }
+            else if (j == 4)
+            {
+                neighborReports[i].phyTable = strtol(val, NULL, 16);
+            }
+            else
+            {
+                printf("Insufficient arguments\n");
+                exit(-1);
+            }
+            val = strtok(NULL, ";");
+            j++;
+        }
+    }
+
+    ret = wifi_setNeighborReports(apIndex, neighbor_num, neighborReports);
+    free(neighborReports);
+    if (ret != RETURN_OK)
+    {
+        printf("wifi_setNeighborReports ret = %d", ret);
+        exit(-1);
+    }
+}
+
 void test_size()
 {
 #define PRINT_SIZE(T) printf("sizeof(%s) = %d\n", #T, (int)sizeof(T))
@@ -998,6 +1068,7 @@ void help()
     printf("    setRadioDfsEnable                      <RADIO INDEX> <0 | 1>\n");
     printf("    getRadioChannels                       <RADIO INDEX>\n");
     printf("    chan_eventRegister                     <RADIO INDEX>\n");
+    printf("    setNeighborReports                     <AP INDEX> <BSSID>;<INFO>;<OP_CLASS>;<CHANNEL>;<PHY_TABLE> ...\n");
 
     printf("radio indexes:\n");
     wifi_getRadioNumberOfEntries(&nr);
@@ -1182,6 +1253,9 @@ int main(int argc,char **argv)
     }
     else if (!strcmp(cmd, "chan_eventRegister")) {
         test_chan_eventRegister(index);
+    }
+    else if (!strcmp(cmd, "setNeighborReports")) {
+        test_setNeighborReports(index, xargc, xargv);
     }
     else {
         help();

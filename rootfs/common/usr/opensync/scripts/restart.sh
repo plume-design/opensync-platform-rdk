@@ -27,4 +27,4 @@
 #
 # This script is called by various managers for fatal restart
 
-/usr/opensync/scripts/managers.init restart < /dev/null > /dev/null 2>&1 &
+/usr/opensync/scripts/managers.init opensync-restart < /dev/null > /dev/null 2>&1 &

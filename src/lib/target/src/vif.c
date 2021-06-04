@@ -205,9 +205,9 @@ static void acl_apply(
 
     // !!! XXX: Cannot touch ACL for home interfaces, since they are currently
     //          used for band steering.
-    if (!strncmp(ssid_ifname, "home-ap-", 8))
+    if (!strcmp(ssid_ifname, CONFIG_RDK_HOME_AP_24_IFNAME) ||
+        !strcmp(ssid_ifname, CONFIG_RDK_HOME_AP_50_IFNAME))
     {
-        // Don't touch ACL
         return;
     }
 

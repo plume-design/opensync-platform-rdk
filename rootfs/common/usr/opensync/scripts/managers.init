@@ -6,6 +6,7 @@ OPENSYNC_BASE_DIR="/usr/opensync"
 
 OPENSYNC_BIN_DIR="${OPENSYNC_BASE_DIR}/bin"
 OPENSYNC_ETC_DIR="${OPENSYNC_BASE_DIR}/etc"
+OPENSYNC_TOOLS_DIR="${OPENSYNC_BASE_DIR}/tools"
 OPENSYNC_RUN_DIR="/var/run/opensync"
 
 OVS_RUN_DIR=/var/run/openvswitch
@@ -15,7 +16,20 @@ LM_TRIGGER_DIR="/tmp/lm/trigger"
 
 RUN_USER="root"
 
+LAN_IPADDR=$(syscfg get lan_ipaddr)
+LAN_NETMASK=$(syscfg get lan_netmask)
+LAN_DHCP_START=$(syscfg get dhcp_start)
+LAN_DHCP_END=$(syscfg get dhcp_end)
+LAN_BRIDGE="br-home"       # !!!!!! CHANGE ME !!!!!!
+
 . $OPENSYNC_BASE_DIR/scripts/platform.funcs
+
+# list of all tables that will be removed from OVSDB when stopping OpenSync
+CLEAR_OVSDB_TABLES="AW_Debug AW_LM_Config Band_Steering_Clients Band_Steering_Config \
+                    DHCP_leased_IP FSM_Policy Manager Node_State Openflow_Config Openflow_State \
+                    Openflow_Tag SSL Wifi_Associated_Clients Wifi_Master_State Wifi_Radio_Config \
+                    Wifi_Radio_State Wifi_Stats_Config Wifi_VIF_Config Wifi_VIF_State \
+                    Wifi_Inet_State"
 
 gre_filter() {
     awk '
@@ -32,9 +46,19 @@ gre_cleanup() {
     ip -d link show | gre_filter | while read IF; do
         if [ ${#IF} -gt 0 ] && [ "${IF:0:3}" == "pgd" ]; then
             echo "Removing GRE tunnel: $IF"
+            ovs-vsctl del-port $LAN_BRIDGE "$IF"
             ip link del "$IF"
         fi
     done
+}
+
+ovsdb_cleanup() {
+    for table in $CLEAR_OVSDB_TABLES; do
+        ${OPENSYNC_TOOLS_DIR}/ovsh d $table
+    done
+
+    ${OPENSYNC_TOOLS_DIR}/ovsh d Wifi_Inet_Config -w if_type=="gre"
+    ${OPENSYNC_TOOLS_DIR}/ovsh d Wifi_Inet_Config -w if_type=="vlan"
 }
 
 ovs_start() {
@@ -116,6 +140,12 @@ ovs_stop() {
 opensync_start() {
     platform_prereq_check || return 1
 
+    if [[ -z $LAN_BRIDGE || -z $LAN_IPADDR || -z $LAN_NETMASK || -z $LAN_DHCP_START || -z $LAN_DHCP_END ]]; then
+        echo "LAN network variables are not initialized. Skipping initialization of Wifi_Inet_Config"
+    else
+        ${OPENSYNC_TOOLS_DIR}/ovsh u Wifi_Inet_Config -w if_name==$LAN_BRIDGE inet_addr:=$LAN_IPADDR netmask:=$LAN_NETMASK dhcpd::"[\"map\",[[\"start\",\"$LAN_DHCP_START\"],[\"stop\",\"$LAN_DHCP_END\"]]]"
+    fi
+
     if [ ! -d ${OPENSYNC_RUN_DIR} ]; then
         mkdir -p ${OPENSYNC_RUN_DIR} && chown ${RUN_USER} ${OPENSYNC_RUN_DIR}
     fi
@@ -136,8 +166,9 @@ opensync_start() {
 
 opensync_stop() {
     echo "Stopping OpenSync managers"
-    killall -s SIGKILL dm wm sm cm nm lm bm qm om pl2rld
+    killall -s SIGKILL dm wm sm cm nm lm bm qm om fsm pl2rld
     gre_cleanup
+    ovsdb_cleanup
     platform_stop
 }
 
