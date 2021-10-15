@@ -27,8 +27,10 @@
 #
 # This script is used to switch between Linux native and OVS bridges
 # on a single-CPU platform
+KCONFIG_ENV_FILE=$(dirname $(dirname "$(readlink -f "$0")"))/etc/kconfig
+. "$KCONFIG_ENV_FILE"
 
-BRLAN0="brlan0"
+LAN_BRIDGE=$CONFIG_RDK_LAN_BRIDGE_NAME
 
 swap_native_to_ovs()
 {
@@ -56,36 +58,36 @@ swap_native_to_ovs()
     fi
 
 
-    aplist=`brctl show "$BRLAN0" | tail -n +2 | rev | cut  -f1 | rev`
+    aplist=`brctl show "$LAN_BRIDGE" | tail -n +2 | rev | cut  -f1 | rev`
     echo "$aplist" > /tmp/aplist
 
-    brlan0_ip=`ifconfig "$BRLAN0" | grep Mask | tr -s ' ' | cut -d':' -f2 | cut -d' ' -f1`
-    brlan0_ipv6=`ip -6 addr show dev "$BRLAN0" | grep global | tr -s ' ' | cut -d' ' -f3`
+    brlan0_ip=`ifconfig "$LAN_BRIDGE" | grep Mask | tr -s ' ' | cut -d':' -f2 | cut -d' ' -f1`
+    brlan0_ipv6=`ip -6 addr show dev "$LAN_BRIDGE" | grep global | tr -s ' ' | cut -d' ' -f3`
     echo "$brlan0_ip" > /tmp/brlan0_ip
     echo "$brlan0_ipv6" > /tmp/brlan0_ipv6
-    brlan0_mask=`ifconfig "$BRLAN0" | grep Mask | tr -s ' ' | cut -d':' -f4 | cut -d' ' -f1`
+    brlan0_mask=`ifconfig "$LAN_BRIDGE" | grep Mask | tr -s ' ' | cut -d':' -f4 | cut -d' ' -f1`
     echo "$brlan0_mask" > /tmp/brlan0_mask
-    ip route | grep "$BRLAN0" > /tmp/iproute
-    ip -6 route | grep "$BRLAN0" > /tmp/iproute6
+    ip route | grep "$LAN_BRIDGE" > /tmp/iproute
+    ip -6 route | grep "$LAN_BRIDGE" > /tmp/iproute6
 
     for j in $aplist
     do
-        brctl delif "$BRLAN0" "$j"
+        brctl delif "$LAN_BRIDGE" "$j"
     done
-    ifconfig "$BRLAN0" down
-    brctl delbr "$BRLAN0"
+    ifconfig "$LAN_BRIDGE" down
+    brctl delbr "$LAN_BRIDGE"
 
-    ovs-vsctl add-br "$BRLAN0"
-    ifconfig "$BRLAN0" "$brlan0_ip" netmask "$brlan0_mask"
-    ifconfig "$BRLAN0" up
-    ip -6 address add "$brlan0_ipv6" dev "$BRLAN0"
+    ovs-vsctl add-br "$LAN_BRIDGE"
+    ifconfig "$LAN_BRIDGE" "$brlan0_ip" netmask "$brlan0_mask"
+    ifconfig "$LAN_BRIDGE" up
+    ip -6 address add "$brlan0_ipv6" dev "$LAN_BRIDGE"
     while read i; do ip route add $i ; done < /tmp/iproute
     while read k; do ip -6 route add $k ; done < /tmp/iproute6
 
     for j in $aplist
     do
-        echo "move $j to OVS $BRLAN0"
-        ovs-vsctl add-port "$BRLAN0" "$j"
+        echo "move $j to OVS $LAN_BRIDGE"
+        ovs-vsctl add-port "$LAN_BRIDGE" "$j"
     done
 
     brctl show
@@ -112,50 +114,50 @@ swap_ovs_to_native()
     if [ -e /tmp/brlan0_ip ]; then
         brlan0_ip=`cat /tmp/brlan0_ip`
     else
-        brlan0_ip=`ifconfig "$BRLAN0" | grep Mask | tr -s ' ' | cut -d':' -f2 | cut -d' ' -f1`
+        brlan0_ip=`ifconfig "$LAN_BRIDGE" | grep Mask | tr -s ' ' | cut -d':' -f2 | cut -d' ' -f1`
     fi
 
     if [ -e /tmp/brlan0_ipv6 ]; then
-        brlan0_ipv6=`ip -6 addr show dev "$BRLAN0" | grep global | tr -s ' ' | cut -d' ' -f3`
+        brlan0_ipv6=`ip -6 addr show dev "$LAN_BRIDGE" | grep global | tr -s ' ' | cut -d' ' -f3`
     else
-        brlan0_ipv6=`ip -6 addr show dev "$BRLAN0" | grep global | tr -s ' ' | cut -d' ' -f3`
+        brlan0_ipv6=`ip -6 addr show dev "$LAN_BRIDGE" | grep global | tr -s ' ' | cut -d' ' -f3`
     fi
 
     if [ -e /tmp/brlan0_mask ]; then
         brlan0_mask=`cat /tmp/brlan0_mask`
     else
-        brlan0_mask=`ifconfig "$BRLAN0" | grep Mask | tr -s ' ' | cut -d':' -f4 | cut -d' ' -f1`
+        brlan0_mask=`ifconfig "$LAN_BRIDGE" | grep Mask | tr -s ' ' | cut -d':' -f4 | cut -d' ' -f1`
     fi
 
     if [ ! -e /tmp/iproute ]; then
-        ip route | grep "$BRLAN0" > /tmp/iproute
+        ip route | grep "$LAN_BRIDGE" > /tmp/iproute
     fi
 
     if [ ! -e /tmp/iproute6 ]; then
-        ip -6 route | grep "$BRLAN0" > /tmp/iproute6
+        ip -6 route | grep "$LAN_BRIDGE" > /tmp/iproute6
     fi
 
     for j in $aplist
     do
-        ovs-vsctl del-port "$BRLAN0" "$j"
+        ovs-vsctl del-port "$LAN_BRIDGE" "$j"
     done
-    ifconfig "$BRLAN0" down
-    ovs-ofctl del-flows "$BRLAN0"
-    ovs-ofctl add-flow "$BRLAN0" "table=0, priority=0 actions=NORMAL"
+    ifconfig "$LAN_BRIDGE" down
+    ovs-ofctl del-flows "$LAN_BRIDGE"
+    ovs-ofctl add-flow "$LAN_BRIDGE" "table=0, priority=0 actions=NORMAL"
     ovs-dpctl del-flows
-    ovs-vsctl del-br "$BRLAN0"
+    ovs-vsctl del-br "$LAN_BRIDGE"
 
-    brctl addbr "$BRLAN0"
-    ifconfig "$BRLAN0" "$brlan0_ip" netmask "$brlan0_mask"
-    ifconfig "$BRLAN0" up
-    ip -6 address add "$brlan0_ipv6" dev "$BRLAN0"
+    brctl addbr "$LAN_BRIDGE"
+    ifconfig "$LAN_BRIDGE" "$brlan0_ip" netmask "$brlan0_mask"
+    ifconfig "$LAN_BRIDGE" up
+    ip -6 address add "$brlan0_ipv6" dev "$LAN_BRIDGE"
     while read i; do ip route add $i ; done < /tmp/iproute
     while read k; do ip route add $k ; done < /tmp/iproute6
 
     for j in $aplist
     do
-        echo "move $j to native $BRLAN0"
-        brctl addif "$BRLAN0" "$j"
+        echo "move $j to native $LAN_BRIDGE"
+        brctl addif "$LAN_BRIDGE" "$j"
     done
 
     ovs-vsctl show
@@ -170,7 +172,7 @@ RET=0
 case "$1" in
 
     "status")
-        #if [ `brctl show "$BRLAN0" | wc -l` -le 1 ]; then
+        #if [ `brctl show "$LAN_BRIDGE" | wc -l` -le 1 ]; then
         if [ -e /tmp/ovs_status ]; then
             echo "OVS bridge currently in use"
         else

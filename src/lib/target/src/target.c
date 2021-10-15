@@ -26,7 +26,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stdio.h>
 
-#include "evsched.h"
 #include "os.h"
 #include "os_nif.h"
 #include "log.h"
@@ -115,13 +114,6 @@ bool target_init(target_init_opt_t opt, struct ev_loop *loop)
             break;
 
         case TARGET_INIT_MGR_WM:
-            if (evsched_init(loop) == false)
-            {
-                LOGE("Initializing WM "
-                        "(Failed to initialize EVSCHED)");
-                return -1;
-            }
-
 #ifndef CONFIG_RDK_DISABLE_SYNC
             sync_init(SYNC_MGR_WM, NULL);
 #endif

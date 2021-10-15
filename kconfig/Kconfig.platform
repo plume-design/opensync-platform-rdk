@@ -134,13 +134,6 @@ config RDK_MGMT_FRAME_CB_SUPPORT
         OpenSync received raw management frames. OpenSync
         parses those frames for Band Steering purpose.
 
-config RDK_LEGACY_SECURITY_SCHEMA
-    bool "Legacy OVSDB schema for security"
-    default n
-    help
-        Needed only if OpenSync runs on a deployment that doesn't
-        support new OVSDB schema for security (OpenSync < 2.4)
-
 menu "OSync HAL API"
 
 choice

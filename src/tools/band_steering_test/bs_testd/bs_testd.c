@@ -62,7 +62,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 static bool g_verbose = false;
 static int g_output_sockfd = -1;
-static char g_msg_buf[1024];
+static char g_msg_buf[2048];
 
 /* Below map must match wifi_steering_eventType_t
  * enum from wifi_hal.h"

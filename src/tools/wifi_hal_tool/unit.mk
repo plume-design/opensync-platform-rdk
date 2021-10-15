@@ -1,4 +1,4 @@
-# Copyright (c) 2017, Plume Design Inc. All rights reserved.
+# Copyright (c) 2021, Plume Design Inc. All rights reserved.
 # 
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -24,53 +24,17 @@
 
 ##############################################################################
 #
-# RDK unit override for target library
+# wifi_hal_tool
 #
 ##############################################################################
 
-UNIT_SRC := $(TARGET_COMMON_SRC)
-ifneq ($(CONFIG_RDK_DISABLE_SYNC),y)
-UNIT_SRC := $(filter-out src/target_mac_learn.c,$(UNIT_SRC))
-endif
+UNIT_NAME := wifi_hal_tool
 
-UNIT_SRC_DIR := $(OVERRIDE_DIR)/src
+UNIT_DISABLE := n
 
-UNIT_SRC_TOP :=
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/target.c
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/clients.c
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/radio.c
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/vif.c
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/stats.c
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/log.c
+UNIT_DIR := tools
 
-ifneq ($(CONFIG_RDK_DISABLE_SYNC),y)
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/sync.c
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/maclearn.c
-endif
+UNIT_TYPE := BIN
 
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/bsal.c
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/cloud_config.c
-UNIT_SRC_TOP += $(if $(CONFIG_RDK_WPS_SUPPORT), $(UNIT_SRC_DIR)/wps.c)
-UNIT_SRC_TOP += $(if $(CONFIG_RDK_MULTI_AP_SUPPORT), $(UNIT_SRC_DIR)/multi_ap.c)
-
-UNIT_CFLAGS  += -I$(OVERRIDE_DIR)/inc
-UNIT_CFLAGS  += -DENABLE_MESH_SOCKETS
-
-UNIT_DEPS    += $(PLATFORM_DIR)/src/lib/devinfo
-UNIT_DEPS    += $(PLATFORM_DIR)/src/lib/osync_hal
-UNIT_DEPS    += src/lib/schema
-UNIT_DEPS    += src/lib/const
-UNIT_DEPS    += src/lib/osp
-
-UNIT_DEPS_CFLAGS += src/lib/ovsdb # Needed for ovsdb_utils.h
-UNIT_DEPS_CFLAGS += src/lib/osn   # Needed for osn_dhcp.h
-
-ifeq ($(RDK_LOGGER),1)
-UNIT_DEPS    += $(PLATFORM_DIR)/src/lib/pl2rl
-endif
-
-UNIT_LDFLAGS := $(SDK_LIB_DIR)  -lhal_wifi -lrt
-UNIT_CFLAGS += -DCONTROLLER_ADDR="\"$(shell echo -n $(CONTROLLER_ADDR))\""
-
-UNIT_EXPORT_CFLAGS  := $(UNIT_CFLAGS)
-UNIT_EXPORT_LDFLAGS := $(UNIT_LDFLAGS)
+UNIT_CFLAGS := -I$(VENDOR_DIR)/src/lib/target/inc
+UNIT_SRC := wifi_hal_tool.c

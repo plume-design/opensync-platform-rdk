@@ -26,5 +26,7 @@
 
 #
 # This script is called by various managers for fatal restart
+KCONFIG_ENV_FILE=$(dirname $(dirname "$(readlink -f "$0")"))/etc/kconfig
+. "$KCONFIG_ENV_FILE"
 
-/usr/opensync/scripts/managers.init opensync-restart < /dev/null > /dev/null 2>&1 &
+$CONFIG_TARGET_PATH_SCRIPTS/managers.init opensync-restart < /dev/null > /dev/null 2>&1 &

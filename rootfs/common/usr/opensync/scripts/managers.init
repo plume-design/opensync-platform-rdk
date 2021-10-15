@@ -1,12 +1,11 @@
 #!/bin/sh
 
-NAME=managers
+KCONFIG_ENV_FILE=$(dirname $(dirname "$(readlink -f "$0")"))/etc/kconfig
+. "$KCONFIG_ENV_FILE"
 
-OPENSYNC_BASE_DIR="/usr/opensync"
-
-OPENSYNC_BIN_DIR="${OPENSYNC_BASE_DIR}/bin"
-OPENSYNC_ETC_DIR="${OPENSYNC_BASE_DIR}/etc"
-OPENSYNC_TOOLS_DIR="${OPENSYNC_BASE_DIR}/tools"
+OPENSYNC_BIN_DIR=$CONFIG_TARGET_PATH_BIN
+OPENSYNC_ETC_DIR="$(dirname $CONFIG_TARGET_PATH_BIN)/etc"
+OPENSYNC_TOOLS_DIR=$CONFIG_TARGET_PATH_TOOLS
 OPENSYNC_RUN_DIR="/var/run/opensync"
 
 OVS_RUN_DIR=/var/run/openvswitch
@@ -20,9 +19,9 @@ LAN_IPADDR=$(syscfg get lan_ipaddr)
 LAN_NETMASK=$(syscfg get lan_netmask)
 LAN_DHCP_START=$(syscfg get dhcp_start)
 LAN_DHCP_END=$(syscfg get dhcp_end)
-LAN_BRIDGE="br-home"       # !!!!!! CHANGE ME !!!!!!
+LAN_BRIDGE=$CONFIG_RDK_LAN_BRIDGE_NAME
 
-. $OPENSYNC_BASE_DIR/scripts/platform.funcs
+. $CONFIG_TARGET_PATH_SCRIPTS/platform.funcs
 
 # list of all tables that will be removed from OVSDB when stopping OpenSync
 CLEAR_OVSDB_TABLES="AW_Debug AW_LM_Config Band_Steering_Clients Band_Steering_Config \

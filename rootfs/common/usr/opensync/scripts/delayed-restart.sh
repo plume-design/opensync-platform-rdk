@@ -25,6 +25,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
+KCONFIG_ENV_FILE=$(dirname $(dirname "$(readlink -f "$0")"))/etc/kconfig
+. "$KCONFIG_ENV_FILE"
+
 if [ $# -eq 1 ]; then
     let tm_delay="$1"
 else
@@ -32,4 +35,4 @@ else
 fi
 
 sleep $tm_delay
-/usr/opensync/scripts/restart.sh
+$CONFIG_TARGET_PATH_SCRIPTS/restart.sh

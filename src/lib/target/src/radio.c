@@ -37,7 +37,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target.h"
 #include "target_internal.h"
 #include "os_nif.h"
-#include "evsched.h"
 
 #ifndef __WIFI_HAL_H__
 #include <ccsp/wifi_hal.h>
@@ -106,6 +105,8 @@ static ev_async             hal_cb_async;
 static ds_dlist_t           hal_cb_queue;
 static int                  hal_cb_queue_len = 0;
 
+static ev_timer healthcheck_timer;
+static ev_timer radio_resync_all_task_timer;
 static struct target_radio_ops g_rops;
 static bool g_resync_ongoing = false;
 
@@ -114,25 +115,13 @@ bool target_radio_config_need_reset()
     return true;
 }
 
-static void healthcheck_task(void *arg)
+static void healthcheck_task(struct ev_loop *loop, ev_timer *watcher, int revents)
 {
     LOGI("Healthcheck re-sync");
     radio_trigger_resync();
-    evsched_task_reschedule_ms(EVSCHED_SEC(CONFIG_RDK_HEALTHCHECK_INTERVAL));
-}
-
-bool target_radio_init(const struct target_radio_ops *ops)
-{
-    /* Register callbacks */
-    g_rops = *ops;
-
-    if (!clients_hal_init(ops))
-    {
-        LOGW("Cannot initialize clients");
-    }
-
-    evsched_task(&healthcheck_task, NULL, EVSCHED_SEC(2));
-    return true;
+    ev_timer_stop(wifihal_evloop, &healthcheck_timer);
+    ev_timer_set(&healthcheck_timer, CONFIG_RDK_HEALTHCHECK_INTERVAL, 0.);
+    ev_timer_start(wifihal_evloop, &healthcheck_timer);
 }
 
 static bool radio_change_channel(
@@ -895,7 +884,7 @@ bool target_radio_config_set2(
     return true;
 }
 
-static void radio_resync_all_task(void *arg)
+static void radio_resync_all_task(struct ev_loop *loop, ev_timer *watcher, int revents)
 {
     INT ret;
     ULONG r, rnum;
@@ -974,14 +963,30 @@ out:
     g_resync_ongoing = false;
 }
 
+bool target_radio_init(const struct target_radio_ops *ops)
+{
+    /* Register callbacks */
+    g_rops = *ops;
+
+    if (!clients_hal_init(ops))
+    {
+        LOGW("Cannot initialize clients");
+    }
+
+    ev_timer_init(&healthcheck_timer, healthcheck_task, 2, 0);
+    ev_timer_init(&radio_resync_all_task_timer, radio_resync_all_task, RESYNC_UPDATE_DELAY_SECONDS, 0);
+    ev_timer_start(wifihal_evloop, &healthcheck_timer);
+    return true;
+}
+
 void radio_trigger_resync()
 {
     if (!g_resync_ongoing)
     {
         g_resync_ongoing = true;
         LOGI("Radio re-sync scheduled");
-        evsched_task(&radio_resync_all_task, NULL,
-                EVSCHED_SEC(RESYNC_UPDATE_DELAY_SECONDS));
+        ev_timer_stop(wifihal_evloop, &radio_resync_all_task_timer);
+        ev_timer_start(wifihal_evloop, &radio_resync_all_task_timer);
     } else
     {
         LOGT("Radio re-sync already ongoing!");

@@ -981,34 +981,32 @@ static bool bsal_client_set_connected(
     wifi_associated_dev3_t *clients = NULL;
     UINT clients_num = 0;
     UINT i = 0;
-    int ret = 0;
+    int wifi_hal_ret = 0;
 #ifndef CONFIG_RDK_HAS_ASSOC_REQ_IES
     bsal_client_info_cache_t *client_info_cache;
 #endif
 
-    ret = wifi_getApAssociatedDeviceDiagnosticResult3(apIndex, &clients, &clients_num);
-    if (ret != RETURN_OK)
+    wifi_hal_ret = wifi_getApAssociatedDeviceDiagnosticResult3(apIndex, &clients, &clients_num);
+    if (wifi_hal_ret != RETURN_OK)
     {
         LOGE("BSAL Failed to fetch clients associated with iface: %d (wifi_getApAssociatedDeviceDiagnosticResult3() "
-             "failed with code %d)", apIndex, ret);
-        goto error;
+             "failed with code %d)", apIndex, wifi_hal_ret);
+        return false;
     }
 
     LOGI("BSAL Found %u clients associated with iface: %d", clients_num, apIndex);
 
-#ifndef CONFIG_RDK_HAS_ASSOC_REQ_IES
-    client_info_cache = bsal_find_client_info(mac_addr);
-#endif
+    memset(info, 0, sizeof(*info));
     for (i = 0; i < clients_num; i++)
     {
         if (memcmp(mac_addr, &clients[i].cli_MACAddress, sizeof(clients[i].cli_MACAddress)) == 0)
         {
-            LOGI("BSAL Client is "MAC_ADDR_FMT" is associated with iface: %d", MAC_ADDR_UNPACK(mac_addr), apIndex);
             info->connected = true;
             info->snr = clients[i].cli_SNR;
             info->tx_bytes = clients[i].cli_BytesSent;
             info->rx_bytes = clients[i].cli_BytesReceived;
 #ifndef CONFIG_RDK_HAS_ASSOC_REQ_IES
+            client_info_cache = bsal_find_client_info(mac_addr);
             if (client_info_cache != NULL)
             {
                 client_info_cache->client.connected = true;
@@ -1018,18 +1016,15 @@ static bool bsal_client_set_connected(
                 memcpy(info, &client_info_cache->client, sizeof(*info));
             }
 #endif
-        }
-        else
-        {
-            info->connected = false;
+            LOGI("BSAL Client "MAC_ADDR_FMT" is connected apIndex: %d, SNR: %d, rx: %lld, tx: %lld", MAC_ADDR_UNPACK(mac_addr),
+                apIndex, info->snr, info->rx_bytes, info->tx_bytes);
+
+            break;
         }
     }
 
-    return true;
-
-error:
     free(clients);
-    return false;
+    return true;
 }
 
 int target_bsal_bss_tm_request(
