@@ -49,7 +49,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "osn_dhcp.h"
 #include "kconfig.h"
 
-#include "osync_hal.h"
 #include "target.h"
 #include "target_internal.h"
 
@@ -58,6 +57,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * DHCPv4 Server
  * ===========================================================================
  */
+/* Debounce timer, the maximum amount time to wait before initializing DHCP leases */
+#define DHCP_LEASE_INIT_DEBOUNCE_TIMER     0.3
 
 /* Number of elements to add to the lease array each time it is resized */
 #define DHCP_LEASE_RESIZE_QUANTUM          16
@@ -106,12 +107,15 @@ static bool               lease_exists(struct osn_dhcp_server_status *st, struct
 static bool               dhcp_server_lease_parse_line(struct osn_dhcp_server_lease *dl, const char *line);
 static osn_dhcp_server_t* dhcp_server_find_by_lease(struct osn_dhcp_server_lease *dl);
 static void               dhcp_server_lease_add(osn_dhcp_server_t *self, struct osn_dhcp_server_lease *dl);
+static void               dhcp_lease_onchange(struct ev_loop *loop, ev_stat *w, int revent);
+static void               dhcp_lease_init(struct ev_loop *loop, struct ev_debounce *ev, int revent);
 
 /*
  * Globals
  */
 static ds_dlist_t   dhcp_server_list = DS_DLIST_INIT(osn_dhcp_server_t, ds_dnode);
-
+static ev_debounce  dhcp_lease_init_debounce;
+static ev_stat      dhcp_lease_watcher;
 
 /*
  * ===========================================================================
@@ -150,6 +154,13 @@ bool osn_dhcp_server_del(osn_dhcp_server_t *self)
 
     /* Remove the DHCP server object instance from the global list */
     ds_dlist_remove(&dhcp_server_list, self);
+
+    /* Stop the lease watcher and DHCP lease initialization */
+    if (ev_is_active(&dhcp_lease_watcher) && ds_dlist_is_empty(&dhcp_server_list))
+    {
+        ev_stat_stop(EV_DEFAULT, &dhcp_lease_watcher);
+        ev_debounce_stop(EV_DEFAULT, &dhcp_lease_init_debounce);
+    }
 
     free(self);
 
@@ -265,14 +276,6 @@ static bool dhcp_server_init(osn_dhcp_server_t *self, const char *ifname)
 {
     wifihal_evloop = EV_DEFAULT;
 
-    if (osync_hal_init() != OSYNC_HAL_SUCCESS)
-    {
-        LOGE("OSync HAL init failed");
-        return false;
-    }
-
-    sync_init(SYNC_MGR_NM, NULL);
-
     /* Initialize this instance */
     memset(self, 0 ,sizeof(*self));
 
@@ -284,6 +287,23 @@ static bool dhcp_server_init(osn_dhcp_server_t *self, const char *ifname)
 
     /* Initialize IP range list */
     ds_tree_init(&self->ds_range_list, dhcp_range_cmp, struct dhcp_range, dr_tnode);
+
+    if (ds_dlist_is_empty(&dhcp_server_list))
+    {
+        /* Initialize the DHCP leases file watcher */
+        ev_stat_init(
+            &dhcp_lease_watcher,
+            dhcp_lease_onchange,
+            CONFIG_RDK_DHCP_LEASES_PATH,
+            0.0);
+
+        ev_stat_start(EV_DEFAULT, &dhcp_lease_watcher);
+
+        /* Trigger the update after the dhcp server instance is created */
+        ev_debounce_init(&dhcp_lease_init_debounce, dhcp_lease_init, DHCP_LEASE_INIT_DEBOUNCE_TIMER);
+        ev_debounce_start(EV_DEFAULT, &dhcp_lease_init_debounce);
+    }
+
     /* Insert itself into the global list */
     ds_dlist_insert_tail(&dhcp_server_list, self);
 
@@ -303,61 +323,6 @@ static void dhcp_lease_clear(osn_dhcp_server_t *self)
     }
 
     self->ds_status.ds_leases_len = 0;
-}
-
-/*
- * Resync all DHCP leases
- */
-bool dhcp_server_resync_all_leases(void)
-{
-    osn_dhcp_server_t *ds;
-    FILE *lf;
-    char line[1024];
-    bool retval = false;
-
-    lf = fopen(CONFIG_RDK_DHCP_LEASES_PATH, "r");
-    if (lf == NULL)
-    {
-        LOG(ERR, "dhcpv4_server: Error opening lease file: %s", CONFIG_RDK_DHCP_LEASES_PATH);
-        goto exit;
-    }
-
-    /* Clear all leases */
-    ds_dlist_foreach(&dhcp_server_list, ds)
-    {
-        dhcp_lease_clear(ds);
-    }
-
-    while (fgets(line, sizeof(line), lf) != NULL)
-    {
-        struct osn_dhcp_server_lease dl;
-
-        if (!dhcp_server_lease_parse_line(&dl, line))
-        {
-            LOG(WARN, "dhcpv4_server: Error parsing DHCP lease line: %s", line);
-            continue;
-        }
-
-        /* Find the server instance that this lease belongs to */
-        ds = dhcp_server_find_by_lease(&dl);
-        if (ds == NULL)
-        {
-            LOG(NOTICE, "dhcpv4_server: Unable find server instance associated with lease: "PRI_osn_ip_addr,
-                    FMT_osn_ip_addr(dl.dl_ipaddr));
-            continue;
-        }
-
-        dhcp_server_lease_add(ds, &dl);
-    }
-
-    retval = true;
-    dhcp_server_status_dispatch();
-
-exit:
-    if (lf != NULL) fclose(lf);
-
-    return retval;
-
 }
 
 /*
@@ -394,7 +359,7 @@ static bool dhcp_server_lease_parse_line(struct osn_dhcp_server_lease *dl, const
         "(([0-9]+\\.?){4}) "                    /* 4,5: Match IP address */
         "(\\*|[a-zA-Z0-9_-]+) "                 /* 6: Match hostname, can be "*" */
         "(\\*|([0-9]+,?)+) "                    /* 7,8: Match fingerprint, can be "*" */
-        "(\"(\\*|[^\"]+)\" )?"                  /* 9: Match vendor-class, can be "*" */
+        "\"(\\*|[^\"]+)\" "                     /* 9: Match vendor-class, can be "*" */
         "[^ ]+$";                               /* Match CID, can be "*" */
 
     static bool parse_re_compiled = false;
@@ -521,45 +486,139 @@ static void dhcp_server_lease_add(osn_dhcp_server_t *self, struct osn_dhcp_serve
                 (st->ds_leases_len + DHCP_LEASE_RESIZE_QUANTUM) * sizeof(struct osn_dhcp_server_lease));
     }
 
+    LOG(DEBUG, "New lease added: "PRI_osn_ip_addr, FMT_osn_ip_addr(dl->dl_ipaddr));
+
     /* Append to array */
     st->ds_leases[st->ds_leases_len++] = *dl;
 }
 
-/*
- * Given lease info @p dl, find the matching DHCP server instance
- *
- * TODO: This function is less than optimal -- consider implementing it using
- *       some sort of global cache using rb-trees of ranges and reservations
- */
 static osn_dhcp_server_t* dhcp_server_find_by_lease(struct osn_dhcp_server_lease *dl)
 {
     osn_dhcp_server_t *ds;
-    struct dhcp_range *range;
 
     /* Traverse list of server instances*/
     ds_dlist_foreach(&dhcp_server_list, ds)
     {
-        /* Traverse list of DHCP ranges */
-        ds_tree_foreach(&ds->ds_range_list, range)
-        {
-            /* Check if the leased IP is inside the DHCP pool range */
-            if (osn_ip_addr_cmp(&dl->dl_ipaddr, &range->dr_range_start) >= 0 &&
-                    osn_ip_addr_cmp(&dl->dl_ipaddr, &range->dr_range_stop) <= 0)
-            {
-                LOG(DEBUG, "dhcpv4_server: Lease "PRI_osn_ip_addr" is inside the pool range of server %s"
-                        "("PRI_osn_ip_addr" -> "PRI_osn_ip_addr").",
-                        FMT_osn_ip_addr(dl->dl_ipaddr),
-                        ds->ds_ifname,
-                        FMT_osn_ip_addr(range->dr_range_start),
-                        FMT_osn_ip_addr(range->dr_range_stop));
-                return ds;
-            }
-        }
+        /* As we don't have a control over DHPC server
+        * return first found instance.
+        */
+        return ds;
     }
 
-    LOG(DEBUG, "dhcpv4_server: Lease "PRI_osn_ip_addr" doesn't belong to any DHCP server instance.",
-            FMT_osn_ip_addr(dl->dl_ipaddr));
+    LOG(WARNING, "No dhcp server instance found");
 
     return NULL;
 }
 
+/*
+ * Parse the dnsmasq lease file and update the lease cache
+ */
+bool dhcp_lease_parse(void)
+{
+    osn_dhcp_server_t *ds;
+    FILE *lf;
+    char line[1024];
+
+    bool retval = false;
+
+    lf = fopen(CONFIG_RDK_DHCP_LEASES_PATH, "r");
+    if (lf == NULL)
+    {
+        LOGE("dhcpv4_server: Error opening lease file: %s", CONFIG_RDK_DHCP_LEASES_PATH);
+        goto exit;
+    }
+
+    /*
+     * Lock the file -- dnsmasq was patched to to the same -- this ensures we're
+     * not reading a half-written file.
+     *
+     * When the file descriptor is closed, the associated lock should be released
+     * as well.
+     */
+    if (!os_file_lock(fileno(lf), OS_LOCK_READ))
+    {
+        LOGE("dhcpv4_server: Error locking lease file: %s", CONFIG_RDK_DHCP_LEASES_PATH);
+        goto exit;
+    }
+
+    while (fgets(line, sizeof(line), lf) != NULL)
+    {
+        struct osn_dhcp_server_lease dl;
+
+        if (!dhcp_server_lease_parse_line(&dl, line))
+        {
+            LOGW("dhcpv4_server: Error parsing DHCP lease line: %s", line);
+            continue;
+        }
+
+        /* Find the server instance that this lease belongs to */
+        ds = dhcp_server_find_by_lease(&dl);
+        if (ds == NULL)
+        {
+            LOGN("dhcpv4_server: Unable find server instance associated with lease: "PRI_osn_ip_addr,
+                    FMT_osn_ip_addr(dl.dl_ipaddr));
+            continue;
+        }
+
+        dhcp_server_lease_add(ds, &dl);
+    }
+
+    retval = true;
+exit:
+    if (lf != NULL) fclose(lf);
+
+    return retval;
+}
+
+/*
+ * Callback function triggered by file status change on the lease file
+ */
+void dhcp_lease_onchange(struct ev_loop *loop, ev_stat *w, int revent)
+{
+    (void)loop;
+    (void)revent;
+
+    osn_dhcp_server_t *ds;
+
+    /* Clear all leases */
+    ds_dlist_foreach(&dhcp_server_list, ds)
+    {
+        dhcp_lease_clear(ds);
+    }
+
+    if (w->attr.st_nlink)
+    {
+        LOGI("dhcpv4_server: Lease file changed.");
+        dhcp_lease_parse();
+    }
+    else
+    {
+        LOGI("dhcpv4_server: Lease file removed, flushing all entries.");
+    }
+
+    /* Send out status change notifications */
+    dhcp_server_status_dispatch();
+}
+
+
+void dhcp_lease_init(struct ev_loop *loop, struct ev_debounce *ev, int revent)
+{
+    (void)loop;
+    (void)revent;
+
+    osn_dhcp_server_t *ds;
+
+    LOG(INFO, "DHCP leases initialization");
+
+    /* Clear all leases */
+    ds_dlist_foreach(&dhcp_server_list, ds)
+    {
+        dhcp_lease_clear(ds);
+    }
+
+    dhcp_lease_parse();
+
+    /* Send out status change notifications */
+    dhcp_server_status_dispatch();
+
+}

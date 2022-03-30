@@ -238,7 +238,11 @@ INT wait_neighbor_scan(INT radioIndex,
 
     do {
         errno = 0;
+#ifndef WIFI_HAL_VERSION_3_PHASE2
         rc = wifi_getNeighboringWiFiStatus(radioIndex, neighbor_ap_array, output_array_size);
+#else
+        rc = wifi_getNeighboringWiFiStatus(radioIndex, false, neighbor_ap_array, output_array_size);
+#endif
         printf("wifi_getNeighboringWiFiStatus(apIndex:%d, size:%d) = %d errno=%d\n",
                 apIndex, *output_array_size, rc, errno);
         if (rc != RETURN_OK && errno == EAGAIN) {
@@ -568,7 +572,11 @@ void test_getApAssociatedDeviceStats(int index, char *mac_str)
     PRINT_DOUBLE(s, cli_tx_rate);
 }
 
+#ifdef WIFI_HAL_VERSION_3_PHASE2
+void print_wifi_associated_dev(wifi_associated_dev3_t *p)
+#else
 void print_wifi_associated_dev(wifi_associated_dev_t *p)
+#endif
 {
     char mac_str[32];
     fmt_mac_address_str(&p->cli_MACAddress, mac_str, sizeof(mac_str));
@@ -789,7 +797,11 @@ void all()
     all_clients();
 }
 
+#ifdef WIFI_HAL_VERSION_3_PHASE2
+INT new_ap_associated_client_callback(INT apIndex, wifi_associated_dev3_t *associated_dev)
+#else
 INT new_ap_associated_client_callback(INT apIndex, wifi_associated_dev_t *associated_dev)
+#endif
 {
     printf("NEW AP ASSOCIATED CLIENT: apIndex=%d\n", apIndex);
     print_wifi_associated_dev(associated_dev);

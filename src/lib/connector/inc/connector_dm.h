@@ -24,47 +24,19 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <string.h>
-#include <stddef.h>
-#include <stdbool.h>
+#ifndef CONNECTOR_LAN_H_INCLUDED
+#define CONNECTOR_LAN_H_INCLUDED
 
-#include "devinfo.h"
-#include "osync_hal.h"
-#include "const.h"
+int connector_lan_br_config_push_ovsdb_dm(struct connector_ovsdb_api *connector_api);
+int connector_lan_br_config_push_rdk_dm(const struct schema_Wifi_Inet_Config *inet);
 
 
-#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE
-osync_hal_return_t osync_hal_devinfo_get_cloud_mode(osync_hal_devinfo_cloud_mode_t *mode)
-{
-    char buf[128];
+int dhcp_reservation_push_dm(const struct schema_DHCP_reserved_IP *rip);
+int dhcp_reservation_del_dm(const struct schema_DHCP_reserved_IP *rip);
+int dhcp_reservation_clean_dm(void);
 
-    memset(buf, 0, sizeof(buf));
+void portforward_push_dm(const struct schema_IP_Port_Forward *pschema);
+int portforward_del_dm(const struct schema_IP_Port_Forward *pschema);
+int portforward_clean_dm(void);
 
-    if (devinfo_getv(DEVINFO_MESH_STATE, ARRAY_AND_SIZE(buf)))
-    {
-        *mode = OSYNC_HAL_DEVINFO_CLOUD_MODE_MONITOR;
-        if (!strncmp(buf, "Full", 4) || !strncmp(buf, "full", 4))
-        {
-            *mode = OSYNC_HAL_DEVINFO_CLOUD_MODE_FULL;
-        }
-        return OSYNC_HAL_SUCCESS;
-    }
-
-    return OSYNC_HAL_FAILURE;
-}
-#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE */
-
-
-#ifdef CONFIG_OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR
-osync_hal_return_t osync_hal_devinfo_get_redirector_addr(
-        char *buf,
-        size_t bufsz)
-{
-    if (!devinfo_getv(DEVINFO_MESH_URL, buf, bufsz))
-    {
-        return OSYNC_HAL_FAILURE;
-    }
-
-    return OSYNC_HAL_SUCCESS;
-}
-#endif /* CONFIG_OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR */
+#endif /* CONNECTOR_LAN_H_INCLUDED */

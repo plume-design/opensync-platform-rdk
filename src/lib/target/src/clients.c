@@ -52,7 +52,11 @@ static ds_tree_t            connected_clients;
 typedef struct
 {
     INT                     ssid_index;
+#ifdef WIFI_HAL_VERSION_3_PHASE2
+    wifi_associated_dev3_t  sta;
+#else
     wifi_associated_dev_t   sta;
+#endif
 
     ds_dlist_node_t         node;
 } hal_cb_entry_t;
@@ -65,7 +69,11 @@ static int                  hal_cb_queue_len = 0;
 
 static struct target_radio_ops g_rops;
 
+#ifdef WIFI_HAL_VERSION_3_PHASE2
+static INT clients_hal_assocdev_cb(INT ssid_index, wifi_associated_dev3_t *sta)
+#else
 static INT clients_hal_assocdev_cb(INT ssid_index, wifi_associated_dev_t *sta)
+#endif
 {
     hal_cb_entry_t      *cbe;
     INT                 ret = RETURN_ERR;
@@ -104,7 +112,11 @@ exit:
 
 static INT clients_hal_dissocdev_cb(INT ssid_index, char *mac, INT event_type)
 {
+#ifndef WIFI_HAL_VERSION_3_PHASE2
     wifi_associated_dev_t sta;
+#else
+    wifi_associated_dev3_t sta;
+#endif
 
     memset(&sta, 0, sizeof(sta));
 
@@ -159,7 +171,7 @@ static void clients_hal_async_cb(EV_P_ ev_async *w, int revents)
                 clients_connection(cbe->ssid_index, mac, key.wifi_keyId);
             }
 #else
-            clients_connection(cbe->ssid_index, mac, NULL);
+            clients_connection(cbe->ssid_index, mac, cached_key_id);
 #endif
         }
         else
@@ -223,7 +235,7 @@ bool clients_hal_fetch_existing(unsigned int apIndex)
             clients_connection(apIndex, mac, key.wifi_keyId);
         }
 #else
-        clients_connection(apIndex, mac, NULL);
+        clients_connection(apIndex, mac, cached_key_id);
 #endif
     }
     free(associated_dev);
@@ -285,19 +297,15 @@ static bool clients_update(
     memset(&cschema, 0, sizeof(cschema));
     cschema._partial_update = true;
 
-    STRSCPY(cschema.mac, mac);
-    if (key_id != NULL)
-    {
-        STRSCPY(cschema.key_id, key_id);
-    }
+    SCHEMA_SET_STR(cschema.mac, mac);
+    SCHEMA_SET_STR(cschema.key_id, key_id);
 
-    cschema.key_id_exists = key_id ? (strlen(key_id) > 0) : false;
     if (connected == true)
     {
-        STRSCPY(cschema.state, "active");
+        SCHEMA_SET_STR(cschema.state, "active");
     } else
     {
-        STRSCPY(cschema.state, "inactive");
+        SCHEMA_SET_STR(cschema.state, "inactive");
     }
 
     g_rops.op_client(&cschema, target_unmap_ifname(ifname), connected);
@@ -362,10 +370,7 @@ void clients_connection(
         return;
     }
 
-    if (key_id != NULL)
-    {
-        STRSCPY(client->key_id, key_id);
-    }
+    STRSCPY(client->key_id, key_id);
 
     clients_update(ifname, client->mac, client->key_id, true);
 

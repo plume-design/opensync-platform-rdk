@@ -37,7 +37,7 @@ UNIT_CFLAGS += -D_ANSC_LINUX -D_ANSC_USER -D_ANSC_LITTLE_ENDIAN_
 UNIT_LDFLAGS := $(SDK_LIB_DIR) -lccsp_common
 
 UNIT_SRC_TOP := $(OVERRIDE_DIR)/src/connector_main.c
-UNIT_SRC_TOP += $(OVERRIDE_DIR)/src/connector_lan.c
+UNIT_SRC_TOP += $(OVERRIDE_DIR)/src/connector_dm.c
 
 UNIT_DEPS += src/lib/kconfig
 UNIT_DEPS += src/lib/log

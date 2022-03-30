@@ -28,7 +28,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define TARGET_RDKB_H_INCLUDED
 
 #include "schema.h"
-#include "osync_hal.h"
 #include "target_internal.h"
 
 #define TARGET_CERT_PATH            "/usr/opensync/etc/certs"
@@ -83,7 +82,7 @@ bool target_vif_config_get(char *ifname, struct schema_Wifi_VIF_Config *vconf);
 #include "target_common.h"
 
 #ifndef RADIO_MAX_DEVICE_QTY
-#define RADIO_MAX_DEVICE_QTY 2
+#define RADIO_MAX_DEVICE_QTY 3
 #endif
 
 #endif  /* TARGET_RDKB_H_INCLUDED */

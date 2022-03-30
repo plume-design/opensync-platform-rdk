@@ -27,12 +27,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef TARGET_INTERNAL_H_INCLUDED
 #define TARGET_INTERNAL_H_INCLUDED
 
+#include <stdbool.h>
+
 #include "schema.h"
 #include "dpp_types.h"
 #include "dpp_client.h"
 #include "dpp_survey.h"
 #include "dpp_neighbor.h"
-#include "osync_hal.h"
 #include "osn_dhcp.h"
 
 #ifndef CONFIG_RDK_DISABLE_SYNC
@@ -45,6 +46,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define WIFIHAL_MAX_BUFFER          64
 #define WIFIHAL_MAX_MACSTR          18
+
+#define MAC_ADDR_FMT "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx"
+#define MAC_ADDR_UNPACK(addr) addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]
 
 typedef enum
 {
@@ -99,12 +103,6 @@ typedef struct
     // Target specific client data
     wifi_associated_dev_stats_t     stats;
     wifi_associated_dev3_t          dev3;
-#ifndef CONFIG_RDK_11AX_SUPPORT
-    wifi_associated_dev_rate_info_rx_stats_t stats_rx[STATS_RECORDS];
-    wifi_associated_dev_rate_info_tx_stats_t stats_tx[STATS_RECORDS];
-    unsigned                        num_rx;
-    unsigned                        num_tx;
-#endif
     uint64_t                        stats_cookie;
     ds_dlist_node_t                 node;
 } stats_client_record_t;
@@ -171,6 +169,12 @@ typedef enum
 
 typedef void (*sync_on_connect_cb_t)(void);
 
+#ifndef CONFIG_RDK_MULTI_AP_SUPPORT
+/* Current design requires caching key_id to have matching Wifi_VIF_Config/State tables.
+ * To be removed in the future. */
+extern char cached_key_id[64];
+#endif
+
 bool                 maclearn_update(maclearn_type_t type,
                                     const char *mac,
                                     bool connected);
@@ -194,7 +198,7 @@ void                 sync_init(sync_mgr_t mgr,
 bool                 sync_cleanup(void);
 bool                 sync_send_ssid_change(INT ssid_index, const char *ssid_ifname,
                                     const char *new_ssid);
-#ifndef CONFIG_RDK_DISABLE_SYNC
+#if !defined(CONFIG_RDK_DISABLE_SYNC) && !defined(CONFIG_RDK_MULTI_PSK_SUPPORT)
 bool                 sync_send_security_change(INT ssid_index, const char *ssid_ifname,
                                     MeshWifiAPSecurity *sec);
 #endif
@@ -209,8 +213,8 @@ bool                 vif_state_get(INT ssidIndex, struct schema_Wifi_VIF_State *
 bool                 vif_copy_to_config(INT ssidIndex, struct schema_Wifi_VIF_State *vstate,
                                         struct schema_Wifi_VIF_Config *vconf);
 bool                 vif_external_ssid_update(const char *ssid, int ssid_index);
-bool                 vif_external_security_update(int ssid_index, const char *passphrase,
-                                        const char *secMode);
+bool                 vif_external_security_update(int ssid_index);
+bool                 vif_external_acl_update(INT ssid_index);
 bool                 vif_get_radio_ifname(INT ssidIndex, char *radio_ifname,
                                         size_t radio_ifname_size);
 bool                 vif_ifname_to_idx(const char *ifname, INT *outSsidIndex);
@@ -239,6 +243,7 @@ void                vif_config_set_multi_ap(INT ssid_index,
 void                multi_ap_to_state(INT ssid_index,
                                         struct schema_Wifi_VIF_State *vstate);
 bool                vap_controlled(const char *ifname);
+bool                is_home_ap(const char *ifname);
 
 extern struct ev_loop   *wifihal_evloop;
 

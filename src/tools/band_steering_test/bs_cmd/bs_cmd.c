@@ -128,39 +128,39 @@ exit:
 
 static void print_usage()
 {
-   printf("\nusage: bs_cmd [-v] [-s <ip:port>] COMMAND\n"
-          "\n\t-v: \n\t\tEnable verbose mode\n"
-          "\n\t-s <ip:port>: \n\t\tIp and port number of server (bs_testd) to which commands will be sent. Default: %s:%d\n"
-          "\n\tCOMMAND: \n\t\tOne of available commands (see below)\n\n", DEFAULT_IP, DEFAULT_PORT);
-   printf("COMMANDS:\n");
-   printf("\texit\n\t\tStop running 'bs_testd' instance\n");
-   printf("\n\twifi_steering_eventRegister\n\t\tRegister debug callback that prints all the events\n");
-   printf("\n\twifi_steering_eventUnregister\n"
-          "\t\tUnregister debug callback\n");
-   printf("\n\twifi_steering_setGroup <GROUP_INDEX> <CFG_2_FILE || NULL> <CFG_5_FILE || NULL>\n"
-          "\t\tCFG_2_FILE, CFG_5_FILE - paths to files that contain wifi_steering_apConfig_t configuration "
-          "for cfg_2 and cfg_5 parameters\n");
-   printf("\n\twifi_steering_clientDisconnect <GROUP_INDEX> <AP_INDEX> <MAC> <TYPE> <REASON>\n"
-          "\t\tTYPE - 0: unknown, 1: disassoc, 2: deauth\n");
-   printf("\n\twifi_steering_clientMeasure <GROUP_INDEX> <AP_INDEX> <MAC>\n"
-          "\t\tIssue a request to perform SNR measurement\n");
-   printf("\n\twifi_steering_clientSet <GROUP_INDEX> <AP_INDEX> <MAC> <CLIENT_CONFIG_FILE>\n"
-          "\t\tCLIENT_CONFIG_FILE - path to file that contains per-client configuration (which include LWM/HWM settings)\n");
-   printf("\n\twifi_steering_clientRemove <GROUP_INDEX> <AP_INDEX> <MAC>\n"
-          "\t\tRemove BS configuration for client\n");
-   printf("\n\twifi_setBTMRequest <AP_INDEX> <PEER_MAC> <BTM_REQUEST_FILE>\n"
-          "\t\tBTM_REQUEST_FILE - path to file that contains parameters of BTM Request (including list of candidates)\n");
-   printf("\n\twifi_setRMBeaconRequest <AP_INDEX> <PEER_MAC> <DIAL_TOKEN> <RM_REQUEST_FILE>\n"
-          "\t\tRM_REQUEST_FILE - path to file that contains parameters of RM Beacon Request, DIAL_TOKEN: INT number (by default 0)\n");
-   printf("\n\twifi_getBSSTransitionActivation <AP_INDEX>\n"
-          "\t\tCheck if BTM capability is enabled on the AP\n");
-   printf("\n\twifi_getNeighborReportActivation <AP_INDEX>\n"
-          "\t\tCheck if RRM capability is enabled on the AP\n");
-   printf("\n\twifi_setBSSTransitionActivation<AP_INDEX> <STATE>\n"
-          "\t\tSTATE - '0' disable BTM, '1' enable BTM\n");
-   printf("\n\twifi_setNeighborReportActivation <AP_INDEX> <STATE>\n"
-          "\t\tSTATE - '0' disable RRM, '1' enable RRM\n\n");
-   exit(0);
+    printf("\nusage: bs_cmd [-v] [-s <ip:port>] COMMAND\n"
+           "\n\t-v: \n\t\tEnable verbose mode\n"
+           "\n\t-s <ip:port>: \n\t\tIp and port number of server (bs_testd) to which commands will be sent. Default: %s:%d\n"
+           "\n\tCOMMAND: \n\t\tOne of available commands (see below)\n\n", DEFAULT_IP, DEFAULT_PORT);
+    printf("COMMANDS:\n");
+    printf("\texit\n\t\tStop running 'bs_testd' instance\n");
+    printf("\n\twifi_steering_eventRegister\n\t\tRegister debug callback that prints all the events\n");
+    printf("\n\twifi_steering_eventUnregister\n"
+           "\t\tUnregister debug callback\n");
+    printf("\n\twifi_steering_setGroup <GROUP_INDEX> <CFG_2_FILE || NULL> <CFG_5_FILE || NULL>\n"
+           "\t\tCFG_2_FILE, CFG_5_FILE - paths to files that contain wifi_steering_apConfig_t configuration "
+           "for cfg_2 and cfg_5 parameters\n");
+    printf("\n\twifi_steering_clientDisconnect <GROUP_INDEX> <AP_INDEX> <MAC> <TYPE> <REASON>\n"
+           "\t\tTYPE - 0: unknown, 1: disassoc, 2: deauth\n");
+    printf("\n\twifi_steering_clientMeasure <GROUP_INDEX> <AP_INDEX> <MAC>\n"
+           "\t\tIssue a request to perform SNR measurement\n");
+    printf("\n\twifi_steering_clientSet <GROUP_INDEX> <AP_INDEX> <MAC> <CLIENT_CONFIG_FILE>\n"
+           "\t\tCLIENT_CONFIG_FILE - path to file that contains per-client configuration (which include LWM/HWM settings)\n");
+    printf("\n\twifi_steering_clientRemove <GROUP_INDEX> <AP_INDEX> <MAC>\n"
+           "\t\tRemove BS configuration for client\n");
+    printf("\n\twifi_setBTMRequest <AP_INDEX> <PEER_MAC> <BTM_REQUEST_FILE>\n"
+           "\t\tBTM_REQUEST_FILE - path to file that contains parameters of BTM Request (including list of candidates)\n");
+    printf("\n\twifi_setRMBeaconRequest <AP_INDEX> <PEER_MAC> <DIAL_TOKEN> <RM_REQUEST_FILE>\n"
+           "\t\tRM_REQUEST_FILE - path to file that contains parameters of RM Beacon Request, DIAL_TOKEN: INT number (by default 0)\n");
+    printf("\n\twifi_getBSSTransitionActivation <AP_INDEX>\n"
+           "\t\tCheck if BTM capability is enabled on the AP\n");
+    printf("\n\twifi_getNeighborReportActivation <AP_INDEX>\n"
+           "\t\tCheck if RRM capability is enabled on the AP\n");
+    printf("\n\twifi_setBSSTransitionActivation<AP_INDEX> <STATE>\n"
+           "\t\tSTATE - '0' disable BTM, '1' enable BTM\n");
+    printf("\n\twifi_setNeighborReportActivation <AP_INDEX> <STATE>\n"
+           "\t\tSTATE - '0' disable RRM, '1' enable RRM\n\n");
+    exit(0);
 }
 
 static bool serialize_ap_cfg_params(const char *cfg_name, char **ptr, int *bytes_left, int *counter)

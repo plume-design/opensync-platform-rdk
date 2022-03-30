@@ -39,10 +39,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define BTM_DEFAULT_PREF 1
 
 typedef enum {
-    BSAL_BAND_UNINITIALIZED = 0,
-    BSAL_BAND_24G,
+    BSAL_BAND_24G               = 0,
     BSAL_BAND_5G,
-    BSAL_BAND_6G
+    BSAL_BAND_COUNT
 } bsal_band_t;
 
 typedef struct
@@ -55,8 +54,12 @@ typedef struct
 typedef struct
 {
     UINT index;
-    size_t iface_number;
-    iface_t *iface;
+    iface_t *iface_24g;
+    iface_t *iface_5g;
+
+    // Private fields
+    iface_t _iface_24g;
+    iface_t _iface_5g;
 } bsal_group_t;
 
 typedef struct
@@ -155,23 +158,8 @@ static void bsal_client_info_update(const wifi_steering_evConnect_t *connect)
 
     client_info_cache->client.is_BTM_supported = connect->isBTMSupported;
     client_info_cache->client.is_RRM_supported = connect->isRRMSupported;
-    switch (connect->bandsCap)
-    {
-        case WIFI_FREQUENCY_2_4_BAND:
-            client_info_cache->client.band_cap_2G = true;
-            break;
- 
-        case WIFI_FREQUENCY_5_BAND:
-        case WIFI_FREQUENCY_5L_BAND:
-        case WIFI_FREQUENCY_5H_BAND:
-            client_info_cache->client.band_cap_5G = true;
-            break;
- 
-        case WIFI_FREQUENCY_6_BAND:
-        case WIFI_FREQUENCY_60_BAND:
-            client_info_cache->client.band_cap_6G = true;
-            break;
-    }
+    client_info_cache->client.band_cap_2G = connect->bandCap2G;
+    client_info_cache->client.band_cap_5G = connect->bandCap5G;
     client_info_cache->client.datarate_info.max_chwidth = connect->datarateInfo.maxChwidth;
     client_info_cache->client.datarate_info.max_streams = connect->datarateInfo.maxStreams;
     client_info_cache->client.datarate_info.phy_mode = connect->datarateInfo.phyMode;
@@ -209,7 +197,6 @@ static void process_event(
 {
     bsal_event_t *bsal_event = NULL;
     uint32_t val = 0;
-    size_t i;
 
     // If we don't have a callback, just ignore the data
     if (_bsal_event_cb == NULL)
@@ -224,17 +211,15 @@ static void process_event(
         goto end;
     }
 
-    for (i = 0; i < group.iface_number; i++)
+    if (group.iface_24g && group.iface_24g->wifihal_cfg.apIndex == wifi_hal_event->apIndex)
     {
-        if (group.iface[i].band != BSAL_BAND_UNINITIALIZED &&
-            group.iface[i].wifihal_cfg.apIndex == wifi_hal_event->apIndex)
-        {
-            STRSCPY(bsal_event->ifname, group.iface[i].bsal_cfg.ifname);
-            break;
-        }
+        STRSCPY(bsal_event->ifname, group.iface_24g->bsal_cfg.ifname);
     }
-
-    if (bsal_event->ifname == NULL)
+    else if (group.iface_5g && group.iface_5g->wifihal_cfg.apIndex == wifi_hal_event->apIndex)
+    {
+        STRSCPY(bsal_event->ifname, group.iface_5g->bsal_cfg.ifname);
+    }
+    else
     {
         LOGD("BSAL Dropping event received for unknown iface (apIndex: %d)", wifi_hal_event->apIndex);
         goto end;
@@ -401,7 +386,6 @@ static bool lookup_ifname(
     INT radio_index;
     int ret;
     BOOL enabled = false;
-    wifi_radio_operationParam_t radio_params;
 
     ret = wifi_getSSIDNumberOfEntries(&snum);
     if (ret != RETURN_OK)
@@ -464,31 +448,27 @@ static bool lookup_ifname(
     }
 
     memset(buf, 0, sizeof(buf));
-    ret = wifi_getRadioOperatingParameters(radio_index, &radio_params);
+    ret = wifi_getRadioOperatingFrequencyBand(radio_index, buf);
     if (ret != RETURN_OK)
     {
         LOGE("BSAL Failed to get operating freq of radio #%d "
-            "(wifi_getRadioOperatingParameters() failed with code %d)",
+             "(wifi_getRadioOperatingFrequencyBand() failed with code %d)",
              radio_index, ret);
         goto error;
     }
 
-    switch (radio_params.band)
+    if (buf[0] == '2')
     {
-        case WIFI_FREQUENCY_2_4_BAND:
-            iface->band = BSAL_BAND_24G;
-            break;
-
-        case WIFI_FREQUENCY_5_BAND:
-        case WIFI_FREQUENCY_5L_BAND:
-        case WIFI_FREQUENCY_5H_BAND:
-            iface->band = BSAL_BAND_5G;
-            break;
-
-        case WIFI_FREQUENCY_6_BAND:
-        case WIFI_FREQUENCY_60_BAND:
-            iface->band = BSAL_BAND_6G;
-            break;
+        iface->band = BSAL_BAND_24G;
+    }
+    else if (buf[0] == '5')
+    {
+        iface->band = BSAL_BAND_5G;
+    }
+    else
+    {
+        LOGE("BSAL Radio #%d has unknown operating freq %s", radio_index, buf);
+        goto error;
     }
 
     memcpy(&iface->bsal_cfg, ifcfg, sizeof(iface->bsal_cfg));
@@ -499,8 +479,8 @@ static bool lookup_ifname(
     iface->wifihal_cfg.inactCheckIntervalSec = iface->bsal_cfg.inact_check_sec;
     iface->wifihal_cfg.inactCheckThresholdSec = iface->bsal_cfg.inact_tmout_sec_normal;
 
-    LOGI("BSAL Found apIndex #%d (ifname: %s, band: %d)", iface->wifihal_cfg.apIndex,
-         iface->bsal_cfg.ifname, iface->band);
+    LOGI("BSAL Found apIndex #%d (ifname: %s, band: %s)", iface->wifihal_cfg.apIndex,
+         iface->bsal_cfg.ifname, iface->band == BSAL_BAND_24G ? "2.4G" : "5G");
 
     return true;
 
@@ -510,118 +490,17 @@ error:
 
 static iface_t* group_get_iface_by_name(const char *ifname)
 {
-    size_t i;
-
-    for (i = 0; i < group.iface_number; i++)
+    if (group.iface_24g && (strcmp(ifname, group.iface_24g->bsal_cfg.ifname) == 0))
     {
-        if (group.iface[i].band != BSAL_BAND_UNINITIALIZED &&
-            (strcmp(ifname, group.iface[i].bsal_cfg.ifname) == 0))
-            return &group.iface[i];
+        return group.iface_24g;
+    }
+
+    if (group.iface_5g && (strcmp(ifname, group.iface_5g->bsal_cfg.ifname) == 0))
+    {
+        return group.iface_5g;
     }
 
     return NULL;
-}
-
-static bool group_add_iface(const iface_t *iface)
-{
-    size_t i;
-
-    if (group_get_iface_by_name(iface->bsal_cfg.ifname) != NULL)
-    {
-        LOGE("BSAL iface: %s is already configured", iface->bsal_cfg.ifname);
-        return false;
-    }
-    for (i = 0; i < group.iface_number; i++)
-    {
-        if (group.iface[i].band == BSAL_BAND_UNINITIALIZED)
-        {
-            memcpy(&group.iface[i], &iface, sizeof(group.iface[i]));
-            break;
-        }
-    }
-    if (i == group.iface_number)
-    {
-        LOGW("BSAL %s: maximum number of radios exceeded", iface->bsal_cfg.ifname);
-        return false;
-    }
-
-    return true;
-}
-
-static bool is_group_initialized()
-{
-    size_t i;
-
-    for (i = 0; i < group.iface_number; i++)
-    {
-        if (group.iface[i].band == BSAL_BAND_UNINITIALIZED) return false;
-    }
-    return true;
-}
-
-static bool is_group_uninitialized()
-{
-    size_t i;
-
-    for (i = 0; i < group.iface_number; i++)
-    {
-        if (group.iface[i].band != BSAL_BAND_UNINITIALIZED) return false;
-    }
-    return true;
-}
-
-static bool group_update_iface(const iface_t *iface)
-{
-    size_t i;
-
-    for (i = 0; i < group.iface_number; i++)
-    {
-        if (group.iface[i].band == iface->band)
-        {
-            memcpy(&group.iface[i], iface, sizeof(group.iface[i]));
-            return true;
-        }
-    }
-
-    LOGE("BSAL %s iface is not already configured", iface->bsal_cfg.ifname);
-    return false;
-}
-
-static bool group_remove_iface(const iface_t *iface)
-{
-    size_t i;
-
-    for (i = 0; i < group.iface_number; i++)
-    {
-        if (group.iface[i].band == iface->band)
-        {
-            memset(&group.iface[i], 0, sizeof(group.iface[i]));
-            return true;
-        }
-    }
-
-    LOGE("BSAL %s iface is not configured", iface->bsal_cfg.ifname);
-    return false;
-
-}
-
-static bool create_wifihal_ap_config_list(wifi_steering_apConfig_t **wifihal_cfg)
-{
-    size_t i;
-
-    *wifihal_cfg = calloc(group.iface_number, sizeof(wifi_steering_apConfig_t));
-    if (wifihal_cfg == NULL)
-    {
-        LOGE("BSAL Failed to allocate memory for wifihal ap config");
-        return false;
-    }
-
-    for (i = 0; i < group.iface_number; i++)
-    {
-        memcpy(*wifihal_cfg, &group.iface[i].wifihal_cfg, sizeof(wifi_steering_apConfig_t));
-    }
-
-    return true;
 }
 
 static void bsal_client_to_wifi_steering_client(
@@ -684,7 +563,6 @@ int target_bsal_init(
         struct ev_loop *loop)
 {
     int ret;
-    ULONG rnum;
 
     if (_bsal_event_cb != NULL)
     {
@@ -694,21 +572,6 @@ int target_bsal_init(
 
     _bsal_event_cb = event_cb;
     memset(&group, 0, sizeof(group));
-
-    ret = wifi_getRadioNumberOfEntries(&rnum);
-    if (ret != RETURN_OK)
-    {
-        LOGE("%s: failed to get radio count", __func__);
-        goto error;
-    }
-
-    group.iface_number = rnum;
-    group.iface = calloc(group.iface_number, sizeof(iface_t));
-    if (!group.iface)
-    {
-        LOGE("%s:%d: unable to allocate memory", __func__, __LINE__);
-        goto error;
-    }
 
     // Register the callback
     ret = wifi_steering_eventRegister(process_event);
@@ -739,7 +602,6 @@ int target_bsal_cleanup(void)
     wifi_steering_eventUnregister();
 
     _bsal_event_cb = NULL;
-    free(group.iface);
 
     LOGI("BSAL cleaned up");
 
@@ -749,7 +611,6 @@ int target_bsal_cleanup(void)
 int target_bsal_iface_add(const bsal_ifconfig_t *ifcfg)
 {
     iface_t iface;
-    wifi_steering_apConfig_t *wifihal_cfg;
 
     if (!lookup_ifname(ifcfg, &iface))
     {
@@ -757,28 +618,57 @@ int target_bsal_iface_add(const bsal_ifconfig_t *ifcfg)
         goto error;
     }
 
-    if (!group_add_iface(&iface)) goto error;
-
-    if (is_group_initialized())
+    if (iface.band == BSAL_BAND_24G)
     {
-        if (!create_wifihal_ap_config_list(&wifihal_cfg)) goto error;
+        if (group.iface_24g != NULL)
+        {
+            LOGE("BSAL 2.4G iface: %s is already configured", group.iface_24g->bsal_cfg.ifname);
+            goto error;
+        }
 
-        int ret = wifi_steering_setGroup(group.index, group.iface_number, wifihal_cfg);
-        free(wifihal_cfg);
+        memcpy(&group._iface_24g, &iface, sizeof(group._iface_24g));
+        group.iface_24g = &group._iface_24g;
+    }
+
+    if (iface.band == BSAL_BAND_5G)
+    {
+        if (group.iface_5g != NULL)
+        {
+            LOGE("BSAL 5G iface: %s is already configured", group.iface_5g->bsal_cfg.ifname);
+            goto error;
+        }
+
+        memcpy(&group._iface_5g, &iface, sizeof(group._iface_5g));
+        group.iface_5g = &group._iface_5g;
+    }
+
+    if ((group.iface_24g != NULL) && (group.iface_5g != NULL))
+    {
+        int ret = wifi_steering_setGroup(group.index,
+                                         &group.iface_24g->wifihal_cfg,
+                                         &group.iface_5g->wifihal_cfg);
+
         if (ret != RETURN_OK)
         {
-            LOGE("BSAL Failed to add radio group #%u"
+            LOGE("BSAL Failed to add radio group #%u of ifaces: %s and %s "
                  " (wifi_steering_setGroup() failed with code %d)",
                  group.index,
+                 group.iface_24g->bsal_cfg.ifname,
+                 group.iface_5g->bsal_cfg.ifname,
                  ret);
             goto error;
         }
 
-        LOGI("BSAL Ifaces added to group #%u", group.index);
+        LOGI("BSAL Added group #%u of ifaces: %s and %s",
+             group.index,
+             group.iface_24g->bsal_cfg.ifname,
+             group.iface_5g->bsal_cfg.ifname);
     }
     else
     {
-        LOGI("BSAL Postpone ifaces group addition until all radios are set");
+        LOGI("BSAL Postpone ifaces group addition until both radios are set (24G: %s; 5G: %s)",
+             group.iface_24g ? group.iface_24g->bsal_cfg.ifname : "N/A",
+             group.iface_5g ? group.iface_5g->bsal_cfg.ifname : "N/A");
     }
 
     return 0;
@@ -790,7 +680,6 @@ error:
 int target_bsal_iface_update(const bsal_ifconfig_t *ifcfg)
 {
     iface_t iface;
-    wifi_steering_apConfig_t *wifihal_cfg;
 
     if (!lookup_ifname(ifcfg, &iface))
     {
@@ -798,29 +687,72 @@ int target_bsal_iface_update(const bsal_ifconfig_t *ifcfg)
         goto error;
     }
 
-    if (!group_update_iface(&iface)) goto error;
-
-    if (is_group_initialized())
+    if (iface.band == BSAL_BAND_24G)
     {
-        if (!create_wifihal_ap_config_list(&wifihal_cfg)) goto error;
+        if (group.iface_24g == NULL)
+        {
+            LOGE("BSAL 2.4G iface is not configured");
+            goto error;
+        }
 
-        int ret = wifi_steering_setGroup(group.index, group.iface_number, wifihal_cfg);
-        free(wifihal_cfg);
+        memcpy(&group._iface_24g, &iface, sizeof(group._iface_24g));
+        group.iface_24g = &group._iface_24g;
+    }
+
+    if (iface.band == BSAL_BAND_5G)
+    {
+        if (group.iface_5g == NULL)
+        {
+            LOGE("BSAL 5G iface is not already configured");
+            goto error;
+        }
+
+        memcpy(&group._iface_5g, &iface, sizeof(group._iface_5g));
+        group.iface_5g = &group._iface_5g;
+    }
+
+    if ((group.iface_24g != NULL) && (group.iface_5g != NULL))
+    {
+        // Unfortunately, the underlying setGroup implementation can fail
+        // if both configs are already set. Because there is no WifiHAL
+        // "update" equivalent, we first delete the group, and then
+        // add it back with new configs.
+        int ret = wifi_steering_setGroup(group.index, NULL, NULL);
+
         if (ret != RETURN_OK)
         {
-            LOGE("BSAL Failed to update radio group #%u"
-                 " (wifi_steering_setGroup() failed with code %d)",
+            LOGE("BSAL Failed to remove radio group #%u during update "
+                 "(wifi_steering_setGroup() failed with code %d)",
                  group.index,
                  ret);
             goto error;
         }
 
-        LOGI("BSAL Updated group #%u",
-             group.index);
+        ret = wifi_steering_setGroup(group.index,
+                                     &group.iface_24g->wifihal_cfg,
+                                     &group.iface_5g->wifihal_cfg);
+
+        if (ret != RETURN_OK)
+        {
+            LOGE("BSAL Failed to update radio group #%u of ifaces: %s and %s "
+                 " (wifi_steering_setGroup() failed with code %d)",
+                 group.index,
+                 group.iface_24g->bsal_cfg.ifname,
+                 group.iface_5g->bsal_cfg.ifname,
+                 ret);
+            goto error;
+        }
+
+        LOGI("BSAL Updated group #%u of ifaces: %s and %s",
+             group.index,
+             group.iface_24g->bsal_cfg.ifname,
+             group.iface_5g->bsal_cfg.ifname);
     }
     else
     {
-        LOGI("BSAL Postpone ifaces update until both radios are set");
+        LOGI("BSAL Postpone ifaces update until both radios are set (24G: %s; 5G: %s)",
+             group.iface_24g ? group.iface_24g->bsal_cfg.ifname : "NULL",
+             group.iface_5g ? group.iface_5g->bsal_cfg.ifname : "NULL");
     }
 
     return 0;
@@ -839,11 +771,32 @@ int target_bsal_iface_remove(const bsal_ifconfig_t *ifcfg)
         goto error;
     }
 
-    if (!group_remove_iface(&iface)) goto error;
-
-    if (is_group_uninitialized())
+    if (iface.band == BSAL_BAND_24G)
     {
-        int ret = wifi_steering_setGroup(group.index, 0, NULL);
+        if (group.iface_24g == NULL)
+        {
+            LOGE("BSAL 2.4G iface is not configured");
+            goto error;
+        }
+
+        group.iface_24g = NULL;
+    }
+
+    if (iface.band == BSAL_BAND_5G)
+    {
+        if (group.iface_5g == NULL)
+        {
+            LOGE("BSAL 5G iface is not already configured");
+            goto error;
+        }
+
+        group.iface_5g = NULL;
+    }
+
+    if ((group.iface_24g == NULL) && (group.iface_5g == NULL))
+    {
+        int ret = wifi_steering_setGroup(group.index, NULL, NULL);
+
         if (ret != RETURN_OK)
         {
             LOGE("BSAL Failed to remove radio group #%u (wifi_steering_setGroup() failed with code %d)",
@@ -855,7 +808,9 @@ int target_bsal_iface_remove(const bsal_ifconfig_t *ifcfg)
     }
     else
     {
-        LOGI("BSAL Postpone iface removal until both radios are removed");
+        LOGI("BSAL Postpone iface removal until both radios are set (24G: %s; 5G: %s)",
+             group.iface_24g ? group.iface_24g->bsal_cfg.ifname : "NULL",
+             group.iface_5g ? group.iface_5g->bsal_cfg.ifname : "NULL");
     }
 
     return 0;
@@ -1103,7 +1058,6 @@ int target_bsal_bss_tm_request(
     unsigned int bss_term_flag = 0;
     int i = 0;
     int ret = 0;
-    mac_address_t mac = {0};
 
     iface = group_get_iface_by_name(ifname);
     if (iface == NULL)
@@ -1146,8 +1100,7 @@ int target_bsal_bss_tm_request(
         req.candidates[i].bssTransitionCandidatePreference.preference = 0x01;
     }
 
-    memcpy(mac, mac_addr, sizeof(mac));
-    ret = wifi_setBTMRequest(iface->wifihal_cfg.apIndex, mac, &req);
+    ret = wifi_setBTMRequest(iface->wifihal_cfg.apIndex, (CHAR*) mac_addr, &req);
     if (ret != RETURN_OK)
     {
         LOGE("BSAL Failed to send BTM request to client "MAC_ADDR_FMT" on iface: %s (wifi_setBTMRequest() "
@@ -1172,7 +1125,6 @@ int target_bsal_rrm_beacon_report_request(
     wifi_BeaconRequest_t req;
     unsigned char dia_token = 0;
     int ret = 0;
-    mac_address_t mac = {0};
 
     iface = group_get_iface_by_name(ifname);
     if (iface == NULL)
@@ -1209,8 +1161,7 @@ int target_bsal_rrm_beacon_report_request(
                           req.opClass, req.mode, req.channel, req.randomizationInterval, req.numRepetitions,
                           req.duration, req.ssidPresent, MAC_ADDR_UNPACK(req.bssid), req.ssid);
 
-    memcpy(mac, mac_addr, sizeof(mac));
-    ret = wifi_setRMBeaconRequest(iface->wifihal_cfg.apIndex, mac, &req, &dia_token);
+    ret = wifi_setRMBeaconRequest(iface->wifihal_cfg.apIndex, (CHAR*) mac_addr, &req, &dia_token);
     if (ret != RETURN_OK)
     {
         LOGE("BSAL Failed to send RRM request to client "MAC_ADDR_FMT" on iface: %s (wifi_setRMBeaconRequest() "

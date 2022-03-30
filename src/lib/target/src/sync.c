@@ -49,7 +49,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "log.h"
 #include "const.h"
 #include "target.h"
-#include "osync_hal.h"
 #include "target_internal.h"
 #include "devinfo.h"
 
@@ -100,12 +99,6 @@ static c_item_t map_iface_type[] =
     C_ITEM_STR(MESH_IFACE_OTHER,                    "Other"),
 };
 
-static c_item_t map_iface_mltype[] =
-{
-    C_ITEM_VAL(MESH_IFACE_ETHERNET,                 MACLEARN_TYPE_ETH),
-    C_ITEM_VAL(MESH_IFACE_MOCA,                     MACLEARN_TYPE_MOCA),
-};
-
 static sync_on_connect_cb_t sync_on_connect_cb = NULL;
 static sync_mgr_t           sync_mgr;
 static ev_io                sync_evio;
@@ -148,26 +141,6 @@ static char* sync_iface_name(int iface_type)
     return tmp;
 }
 
-static int wiifhal_sync_iface_mltype(int iface_type)
-{
-    c_item_t            *citem;
-
-    if ((citem = c_get_item_by_key(map_iface_mltype, iface_type)) != NULL)
-    {
-        return (int)citem->value;
-    }
-
-    return -1;
-}
-
-static void resync_leases()
-{
-    if (!dhcp_server_resync_all_leases())
-    {
-        LOGE("Failed to resync DHCP leases");
-    }
-}
-
 static void sync_process_msg(MeshSync *mp)
 {
     radio_cloud_mode_t              cloud_mode;
@@ -176,7 +149,6 @@ static void sync_process_msg(MeshSync *mp)
     INT                             ret;
     char                            radio_ifname[128];
     char                            ssid_ifname[128];
-    int                             mltype;
     bool                            resync = false;
 
 
@@ -233,8 +205,7 @@ static void sync_process_msg(MeshSync *mp)
                     mp->data.wifiAPSecurity.passphrase,
                     mp->data.wifiAPSecurity.secMode,
                     mp->data.wifiAPSecurity.encryptMode);
-            if (!vif_external_security_update(mp->data.wifiSSIDName.index, mp->data.wifiAPSecurity.passphrase,
-                        mp->data.wifiAPSecurity.secMode))
+            if (!vif_external_security_update(mp->data.wifiSSIDName.index))
             {
                 LOGE("Cannot update config table for SSID: %s", mp->data.wifiSSIDName.ssid);
             }
@@ -251,7 +222,16 @@ static void sync_process_msg(MeshSync *mp)
                 break;
             }
             LOGI("... %s added '%s' to ACL", ssid_ifname, mp->data.wifiAPAddAclDevice.mac);
+#ifdef CONFIG_RDK_SYNC_EXT_HOME_ACLS
+            if (is_home_ap(ssid_ifname))
+            {
+                if (!vif_external_acl_update(mp->data.wifiAPAddAclDevice.index))
+                {
+                    LOGE("Cannot add ACL from Mesh Agent, index=%d", mp->data.wifiAPAddAclDevice.index);
+                }
+            }
             resync = true;
+#endif
             break;
 
         case MESH_WIFI_AP_DEL_ACL_DEVICE:
@@ -264,7 +244,16 @@ static void sync_process_msg(MeshSync *mp)
                 break;
             }
             LOGI("... %s deleted '%s' from ACL", ssid_ifname, mp->data.wifiAPDelAclDevice.mac);
+#ifdef CONFIG_RDK_SYNC_EXT_HOME_ACLS
+            if (is_home_ap(ssid_ifname))
+            {
+                if (!vif_external_acl_update(mp->data.wifiAPAddAclDevice.index))
+                {
+                    LOGE("Cannot del ACL from Mesh Agent, index=%d", mp->data.wifiAPDelAclDevice.index);
+                }
+            }
             resync = true;
+#endif
             break;
 
         case MESH_WIFI_MAC_ADDR_CONTROL_MODE:
@@ -280,7 +269,16 @@ static void sync_process_msg(MeshSync *mp)
                     ssid_ifname,
                     mp->data.wifiMacAddrControlMode.isEnabled ? "true" : "false",
                     mp->data.wifiMacAddrControlMode.isBlacklist ? "true" : "false");
+#ifdef CONFIG_RDK_SYNC_EXT_HOME_ACLS
+            if (is_home_ap(ssid_ifname))
+            {
+                if (!vif_external_acl_update(mp->data.wifiAPAddAclDevice.index))
+                {
+                    LOGE("Cannot update ACL mode from Mesh Agent, index=%d", mp->data.wifiMacAddrControlMode.index);
+                }
+            }
             resync = true;
+#endif
             break;
 
         case MESH_WIFI_SSID_ADVERTISE:
@@ -420,20 +418,12 @@ static void sync_process_msg(MeshSync *mp)
                     mp->data.meshConnect.host,
                     mp->data.meshConnect.isConnected ? "" : "dis");
 
-            if ((mltype = wiifhal_sync_iface_mltype(mp->data.meshConnect.iface)) >= 0)
-            {
-                maclearn_update(
-                        mltype,
-                        mp->data.meshConnect.mac,
-                        mp->data.meshConnect.isConnected);
-            }
             break;
 
         case MESH_DHCP_RESYNC_LEASES:
             BREAK_IF_NOT_MGR(NM);
             LOGD("... Resyncing DHCP leases");
 
-            resync_leases();
             break;
 
         case MESH_DHCP_UPDATE_LEASE:
@@ -444,7 +434,6 @@ static void sync_process_msg(MeshSync *mp)
                     mp->data.meshLease.hostname,
                     mp->data.meshLease.fingerprint);
 
-            resync_leases();
             break;
 
         case MESH_DHCP_ADD_LEASE:
@@ -455,7 +444,6 @@ static void sync_process_msg(MeshSync *mp)
                     mp->data.meshLease.hostname,
                     mp->data.meshLease.fingerprint);
 
-            resync_leases();
             break;
 
         case MESH_DHCP_REMOVE_LEASE:
@@ -466,7 +454,6 @@ static void sync_process_msg(MeshSync *mp)
                     mp->data.meshLease.hostname,
                     mp->data.meshLease.fingerprint);
 
-            resync_leases();
             break;
 
         default:
@@ -703,6 +690,7 @@ bool sync_send_ssid_change(
     return true;
 }
 
+#ifndef CONFIG_RDK_MULTI_PSK_SUPPORT
 bool sync_send_security_change(
         INT ssid_index,
         const char *ssid_ifname,
@@ -733,6 +721,7 @@ bool sync_send_security_change(
          ssid_ifname, sec->secMode, sec->encryptMode);
     return true;
 }
+#endif
 
 bool sync_send_status(radio_cloud_mode_t mode)
 {

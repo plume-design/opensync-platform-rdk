@@ -28,7 +28,7 @@ CLEAR_OVSDB_TABLES="AW_Debug AW_LM_Config Band_Steering_Clients Band_Steering_Co
                     DHCP_leased_IP FSM_Policy Manager Node_State Openflow_Config Openflow_State \
                     Openflow_Tag SSL Wifi_Associated_Clients Wifi_Master_State Wifi_Radio_Config \
                     Wifi_Radio_State Wifi_Stats_Config Wifi_VIF_Config Wifi_VIF_State \
-                    Wifi_Inet_State"
+                    Wifi_Inet_State Wifi_Test_Config Wifi_Test_State"
 
 gre_filter() {
     awk '

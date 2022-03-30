@@ -46,24 +46,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 /*****************************************************************************/
 
-#define LOG_PULL_CMD        "/usr/opensync/scripts/lm_log_pull.sh"
-
-/*****************************************************************************/
-
-bool target_log_pull(const char *upload_url, const char *upload_token)
-{
-    char        tmp[1024];
-
-    snprintf(ARRAY_AND_SIZE(tmp),
-             "%s %s %s %s",
-             LOG_PULL_CMD,
-             upload_url,
-             upload_token,
-             CONFIG_TARGET_PATH_LOG_TRIGGER);
-
-    return !cmd_log(tmp);
-}
-
 btrace_type target_get_btrace_type(void)
 {
     return BTRACE_LOG_ONLY;

@@ -32,6 +32,10 @@ CPU_TYPE = $(RDK_TARGET_ARCH)
 
 CFLAGS += -Wno-error=cpp
 CFLAGS += -I$(PKG_CONFIG_SYSROOT_DIR)/usr/include/protobuf-c
+CFLAGS += -DWIFI_HAL_VERSION_3
+ifeq ($(CONFIG_RDK_WIFI_HAL_VERSION_3_PHASE2),y)
+CFLAGS += -DWIFI_HAL_VERSION_3_PHASE2
+endif
 
 # Yocto takes care of packaging stripped and unstripped binaries on its own,
 # and generates 2 packages: with and without debug symbols.
@@ -104,7 +108,6 @@ INSTALL_ROOTFS_DIR = $(INSTALL_DIR)
 OVSDB_DB_DIR            = $(INSTALL_PREFIX)/etc
 OVSDB_SCHEMA_DIR        = $(INSTALL_PREFIX)/etc
 
-ROOTFS_COMPONENTS = common
 ifneq ($(RDK_TARGET),)
 ROOTFS_COMPONENTS += $(RDK_TARGET)/common
 ifneq ($(RDK_OEM),)

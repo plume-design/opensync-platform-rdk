@@ -35,7 +35,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target.h"
 #include "target_internal.h"
 
-
 #define MODULE_ID LOG_MODULE_ID_OSA
 
 #define STATS_SCAN_MAX_RECORDS     300
@@ -289,11 +288,6 @@ static bool stats_client_fetch(
         wifi_associated_dev3_t     *assoc_dev)
 {
     stats_client_record_t *client_entry = NULL;
-#ifndef CONFIG_RDK_11AX_SUPPORT
-    wifi_associated_dev_rate_info_rx_stats_t *stats_rx = NULL;
-    wifi_associated_dev_rate_info_tx_stats_t *stats_tx = NULL;
-    int statIndex = radioIndex;
-#endif
     mac_address_str_t mac_str;
     ULLONG handle = 0;
     int ret;
@@ -316,28 +310,6 @@ static bool stats_client_fetch(
             &client_entry->stats,
             &handle);
     if (ret != RETURN_OK) goto err;
-
-#ifndef CONFIG_RDK_11AX_SUPPORT
-    ret = wifi_getApAssociatedDeviceRxStatsResult(
-            statIndex,
-            &assoc_dev->cli_MACAddress,
-            &stats_rx,
-            &client_entry->num_rx,
-            &handle);
-    if (ret != RETURN_OK) goto err;
-    memcpy(&client_entry->stats_rx, stats_rx, sizeof(*stats_rx) * client_entry->num_rx);
-    free(stats_rx);
-
-    ret = wifi_getApAssociatedDeviceTxStatsResult(
-            statIndex,
-            &assoc_dev->cli_MACAddress,
-            &stats_tx,
-            &client_entry->num_tx,
-            &handle);
-    if (ret != RETURN_OK) goto err;
-    memcpy(&client_entry->stats_tx, stats_tx, sizeof(*stats_tx) * client_entry->num_tx);
-    free(stats_tx);
-#endif /* CONFIG_RDK_11AX_SUPPORT */
 
     client_entry->stats_cookie = handle;
 
@@ -462,10 +434,6 @@ bool stats_clients_convert(
         dpp_client_record_t       *client_result)
 {
     mac_address_str_t mac_str;
-#ifndef CONFIG_RDK_11AX_SUPPORT
-    radio_type_t radio_type = radio_cfg->type;
-#endif
-
     dpp_mac_to_str(data_new->info.mac, mac_str);
 
     /*LOG(TRACE,"%s %s n:%p %p %p o:%p %p %p r:%p", __FUNCTION__, mac_str,
@@ -525,12 +493,6 @@ bool stats_clients_convert(
         LOGD("New connection - clear old stat records");
         memset(&data_old->stats, 0, sizeof(data_old->stats));
         memset(&data_old->dev3, 0, sizeof(data_old->dev3));
-#ifndef CONFIG_RDK_11AX_SUPPORT
-        memset(&data_old->stats_rx, 0, sizeof(data_old->stats_rx));
-        memset(&data_old->stats_tx, 0, sizeof(data_old->stats_tx));
-        data_old->num_rx = 0;
-        data_old->num_tx = 0;
-#endif
     }
 
     ADD_DELTA(stats.bytes_tx,   stats.cli_tx_bytes);
@@ -542,186 +504,14 @@ bool stats_clients_convert(
     ADD_DELTA(stats.errors_tx,  stats.cli_tx_errors);
     ADD_DELTA(stats.errors_rx,  stats.cli_rx_errors);
 
-#ifdef CONFIG_RDK_11AX_SUPPORT
     client_result->stats.rssi = data_new->dev3.cli_SNR;
-#else
-    client_result->stats.rssi = auto_rssi_to_above_noise_floor(data_new->dev3.cli_RSSI);
-#endif
     LOG(TRACE, "Client %s stats %s=%d", mac_str, "stats.rssi", client_result->stats.rssi);
 
-#ifdef CONFIG_RDK_11AX_SUPPORT
     /* 11ax compatible HAL implementation should provide an average tx/rx rates [mbps] that
      * are SU-normalized.
      */
     client_result->stats.rate_tx = data_new->stats.cli_tx_rate;
     client_result->stats.rate_rx = data_new->stats.cli_rx_rate;
-#else
-    ASSIGN_AVG_FLOAT(stats.rate_tx, dev3.cli_LastDataUplinkRate / 1000.0);
-    ASSIGN_AVG_FLOAT(stats.rate_rx, dev3.cli_LastDataDownlinkRate / 1000.0);
-#endif
-
-#ifndef CONFIG_RDK_11AX_SUPPORT
-    // RX STATS
-
-    int n;  // index in new record
-    int o;  // index in old record
-    bool found;
-
-    dpp_client_stats_rx_t *client_stats_rx = NULL;
-
-#define DPP_RX(X) client_stats_rx->X
-#define NEW_RX(X) (n >= 0 ? data_new->stats_rx[n].X : 0)
-#define OLD_RX(X) (o >= 0 ? data_old->stats_rx[o].X : 0)
-
-#define GET_DELTA_RX(Y) CALC_DELTA_32(NEW_RX(Y), OLD_RX(Y))
-
-#define ADD_DELTA_RX(X,Y) \
-    do { \
-        if (OLD_RX(Y) > NEW_RX(Y)) { \
-            LOGI("Inconsistent data from driver for %s: %lld > %lld. Skipping.",\
-                                                    #Y, OLD_RX(Y), NEW_RX(Y)); \
-            if (o >= 0) data_old->stats_rx[o].Y = 0; \
-            if (n >= 0) data_new->stats_rx[n].Y = 0; \
-        } \
-        DPP_RX(X) += GET_DELTA_RX(Y); \
-        LOG(TRACE, "Client %s stats_rx [%d %d %d] %s=%llu (delta %llu - %llu = %llu)", \
-                mac_str, DPP_RX(bw), DPP_RX(nss), DPP_RX(mcs), #X, (unsigned long long)DPP_RX(X), \
-                (unsigned long long)NEW_RX(Y), (unsigned long long)OLD_RX(Y), \
-                (unsigned long long)GET_DELTA_RX(Y)); \
-    } while (0)
-
-    for (n = 0; n < (int)data_new->num_rx; n++)
-    {
-        // find matching index in old record
-        found = false;
-        for (o = 0; o < (int)data_old->num_rx; o++)
-        {
-            if (   (NEW_RX(mcs) == OLD_RX(mcs))
-                && (NEW_RX(nss) == OLD_RX(nss))
-                && (NEW_RX(bw)  == OLD_RX(bw)) )
-            {
-                found = true;
-                break;
-            }
-        }
-        if (!found) o = -1;
-
-        // Skip unchanged entries
-        if (   !GET_DELTA_RX(bytes)
-            && !GET_DELTA_RX(msdus)
-            && !GET_DELTA_RX(mpdus)
-            && !GET_DELTA_RX(ppdus)
-            && !GET_DELTA_RX(retries) )
-        {
-            continue;
-        }
-
-        client_stats_rx = dpp_client_stats_rx_record_alloc();
-        if (client_stats_rx == NULL)
-        {
-            LOG(ERR,
-                "Updating %s interface client stats rx"
-                "(Failed to allocate memory)",
-                radio_get_name_from_type(radio_type));
-            return false;
-        }
-
-        DPP_RX(mcs)     = NEW_RX(mcs);
-        DPP_RX(nss)     = NEW_RX(nss);
-        DPP_RX(bw)      = NEW_RX(bw);
-        // auto detect rssi format based on cli_RSSI sign
-        if (data_new->dev3.cli_RSSI < 0)
-        {
-            // rssi reported as negated absolute value - convert
-            DPP_RX(rssi) = rssi_to_above_noise_floor(-(int)NEW_RX(rssi_combined));
-        } else
-        {
-            // rssi reported as value above noise floor - use as is
-            DPP_RX(rssi) = NEW_RX(rssi_combined);
-        }
-        DPP_RX(errors)  = 0;  // not collecting currently
-
-        ADD_DELTA_RX(bytes,     bytes);
-        ADD_DELTA_RX(msdu,      msdus);
-        ADD_DELTA_RX(mpdu,      mpdus);
-        ADD_DELTA_RX(ppdu,      ppdus);
-        ADD_DELTA_RX(retries,   retries);
-
-        ds_dlist_insert_tail(&client_result->stats_rx, client_stats_rx);
-    }
-
-    // TX STATS
-    dpp_client_stats_tx_t *client_stats_tx = NULL;
-
-#define DPP_TX(X) client_stats_tx->X
-#define NEW_TX(X) (n >= 0 ? data_new->stats_tx[n].X : 0)
-#define OLD_TX(X) (o >= 0 ? data_old->stats_tx[o].X : 0)
-
-#define GET_DELTA_TX(Y) CALC_DELTA_32(NEW_TX(Y), OLD_TX(Y))
-
-#define ADD_DELTA_TX(X,Y) \
-    do { \
-        if (OLD_TX(Y) > NEW_TX(Y)) { \
-            LOGI("Inconsistent data from driver for %s: %lld > %lld. Skipping.",\
-                                                    #Y, OLD_TX(Y), NEW_TX(Y)); \
-            if (o >= 0) data_old->stats_tx[o].Y = 0; \
-            if (n >= 0) data_new->stats_tx[n].Y = 0; \
-        } \
-        DPP_TX(X) = GET_DELTA_TX(Y); \
-        LOG(TRACE, "Client %s stats_tx [%d %d %d] %s=%llu (delta %llu - %llu = %llu)", \
-                mac_str, DPP_TX(bw), DPP_TX(nss), DPP_TX(mcs), #X, (unsigned long long)DPP_TX(X), \
-                (unsigned long long)NEW_TX(Y), (unsigned long long)OLD_TX(Y), \
-                (unsigned long long)GET_DELTA_TX(Y)); \
-    } while (0)
-
-    for (n = 0; n < (int)data_new->num_tx; n++)
-    {
-        // find matching index in old record
-        found = false;
-        for (o = 0; o < (int)data_old->num_tx; o++)
-        {
-            if (   (NEW_TX(mcs) == OLD_TX(mcs))
-                && (NEW_TX(nss) == OLD_TX(nss))
-                && (NEW_TX(bw)  == OLD_TX(bw)) )
-            {
-                found = true;
-                break;
-            }
-        }
-        if (!found) o = -1;
-
-        // skip unchanged entries
-        if (   !GET_DELTA_TX(attempts)
-            && !GET_DELTA_TX(mpdus) )
-        {
-            continue;
-        }
-
-        client_stats_tx = dpp_client_stats_tx_record_alloc();
-        if (client_stats_tx == NULL) {
-            LOG(ERR,
-                    "Updating %s interface client stats tx"
-                    "(Failed to allocate memory)",
-                    radio_get_name_from_type(radio_type));
-            return false;
-        }
-
-        DPP_TX(mcs)     = NEW_TX(mcs);
-        DPP_TX(nss)     = NEW_TX(nss);
-        DPP_TX(bw)      = NEW_TX(bw);
-
-        // not collecting currently
-        DPP_TX(bytes)   = 0;
-        DPP_TX(msdu)    = 0;
-        DPP_TX(errors)  = 0;
-
-        ADD_DELTA_TX(mpdu,      mpdus);
-        ADD_DELTA_TX(ppdu,      ppdus);
-        ADD_DELTA_TX(retries,   retries);
-
-        ds_dlist_insert_tail(&client_result->stats_tx, client_stats_tx);
-    }
-#endif /* CONFIG_RDK_11AX_SUPPORT */
 
     return true;
 }
@@ -813,11 +603,7 @@ bool stats_survey_get(
             survey_record->stats.survey_obss.chan_self     = (uint32_t)survey_data.chan[i].ch_utilization_busy_self;
             survey_record->stats.survey_obss.chan_rx       = (uint32_t)survey_data.chan[i].ch_utilization_busy_rx;
             survey_record->stats.survey_obss.chan_busy_ext = (uint32_t)survey_data.chan[i].ch_utilization_busy_ext;
-#ifdef CONFIG_RDK_11AX_SUPPORT
             survey_record->stats.survey_obss.chan_noise    = survey_data.chan[i].ch_noise;
-#else
-            survey_record->stats.survey_obss.chan_noise    = -95;
-#endif
 
             LOGT("Fetched %s %s %u survey "
                  "{active=%u busy=%u tx=%u self=%u rx=%u ext=%u noise=%d}",
@@ -1072,17 +858,19 @@ static void stats_scan_results_fetch(EV_P_ ev_timer *w, int revents)
     // Since we do no know when scanning is finished, we need to poll for info.
     // We poll in steps of 250ms. Max waiting time is 5s.
 
-    radio_index = radio_get_index_from_type(radio_cfg->type);
-    if (radio_index < 0)
+    if (!radio_entry_to_hal_radio_index(radio_cfg, &radio_index))
     {
-        LOGE("%s: cannot get radio index", __func__);
         goto exit;
     }
 
     free(g_scan_results);
     g_scan_results = NULL;
 
+#ifdef WIFI_HAL_VERSION_3_PHASE2
+    ret = wifi_getNeighboringWiFiStatus(radio_index, false, &g_scan_results, &g_scan_results_size);
+#else
     ret = wifi_getNeighboringWiFiStatus(radio_index, &g_scan_results, &g_scan_results_size);
+#endif
     if (ret != RETURN_OK)
     {
         // Scanning is still in progress ... come back later
@@ -1511,8 +1299,7 @@ radio_entry_t* target_radio_scan_config_map(
     int                             radio_index;
     int                             scan_index;
 
-    radio_index = radio_get_index_from_type(radio_cfg->type);
-    if (radio_index < 0)
+    if (!radio_entry_to_hal_radio_index(radio_cfg, &radio_index))
     {
         return NULL;
     }
@@ -1537,8 +1324,7 @@ radio_entry_t* target_radio_config_map(
     static radio_entry_t            radio_cfg_ctx[RADIO_MAX_DEVICE_QTY];
     int                             radio_index;
 
-    radio_index = radio_get_index_from_type(radio_cfg->type);
-    if (radio_index < 0)
+    if (!radio_entry_to_hal_radio_index(radio_cfg, &radio_index))
     {
         return NULL;
     }

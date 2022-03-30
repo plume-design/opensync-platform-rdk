@@ -214,6 +214,17 @@ static void dump_event(UINT steeringgroupIndex, wifi_steering_event_t *event)
         case WIFI_STEERING_EVENT_CLIENT_CONNECT:
             datarate = &event->data.connect.datarateInfo;
             rrmcaps = &event->data.connect.rrmCaps;
+#ifdef WIFI_HAL_VERSION_3_PHASE2
+            snprintf(ptr, bytes_left, "\tmac="PRI_os_macaddr_t"\n"
+                    "\tisBTMSupported=%u\n\tisRRMSupported=%u\n\tbandsCap=%d\n\tmaxChwidth=%u\n\tmaxStreams=%u\n\tphyMode=%u\n"
+                    "\tmaxMCS=%u\n\tmaxTxpower=%u\n\tisStaticSmps=%u\n\tisMUMimoSupported=%u\n\tlinkMeas=%d\n\tneighRpt=%d\n\tbcnRptPassive=%d\n"
+                    "\tbcnRptActive=%d\n\tbcnRptTable=%d\n\tlciMeas=%d\n\tftmRangeRpt=%d\n",
+                    FMT_MAC(event->data.probeReq.client_mac), event->data.connect.isBTMSupported, event->data.connect.isRRMSupported,
+                    event->data.connect.bandsCap, datarate->maxChwidth, datarate->maxStreams, datarate->phyMode, datarate->maxMCS,
+                    datarate->maxTxpower, datarate->isStaticSmps, datarate->isMUMimoSupported, rrmcaps->linkMeas, rrmcaps->neighRpt,
+                    rrmcaps->bcnRptPassive, rrmcaps->bcnRptActive, rrmcaps->bcnRptTable, rrmcaps->lciMeas, rrmcaps->ftmRangeRpt
+                   );
+#else
             snprintf(ptr, bytes_left, "\tmac="PRI_os_macaddr_t"\n"
                     "\tisBTMSupported=%u\n\tisRRMSupported=%u\n\tbandCap2G=%d\n\tbandCap5G=%d\n\tmaxChwidth=%u\n\tmaxStreams=%u\n\tphyMode=%u\n"
                     "\tmaxMCS=%u\n\tmaxTxpower=%u\n\tisStaticSmps=%u\n\tisMUMimoSupported=%u\n\tlinkMeas=%d\n\tneighRpt=%d\n\tbcnRptPassive=%d\n"
@@ -224,6 +235,7 @@ static void dump_event(UINT steeringgroupIndex, wifi_steering_event_t *event)
                     rrmcaps->linkMeas, rrmcaps->neighRpt, rrmcaps->bcnRptPassive, rrmcaps->bcnRptActive, rrmcaps->bcnRptTable,
                     rrmcaps->lciMeas, rrmcaps->ftmRangeRpt
                     );
+#endif
             break;
         case WIFI_STEERING_EVENT_CLIENT_DISCONNECT:
             snprintf(ptr, bytes_left, "\tmac="PRI_os_macaddr_t" reason=%u, source=%d type=%d\n", FMT_MAC(event->data.disconnect.client_mac),
@@ -281,6 +293,42 @@ static void set_cfg(wifi_steering_apConfig_t *cfg, char *token, char **params,
                 cfg->utilAvgCount, cfg->inactCheckIntervalSec, cfg->inactCheckThresholdSec);
 }
 
+#ifdef WIFI_HAL_VERSION_3_PHASE2
+static bool handle_set_group(char *params)
+{
+    char *token;
+    UINT steeringgroupIndex;
+    char cfg_2_buf[128];
+    char cfg_5_buf[128];
+    wifi_steering_apConfig_t ap_cfg[2] = {0};
+
+    memset(cfg_2_buf, 0, sizeof(cfg_2_buf));
+    memset(cfg_5_buf, 0, sizeof(cfg_5_buf));
+
+    token = strsep(&params, ";");
+    LOGD("steeringgroupIndex=%s\n", token);
+    steeringgroupIndex = (UINT)strtol(token, NULL, 10);
+
+    token = strsep(&params, ";");
+    if (!strcmp(token, "NULL")) strncpy(cfg_2_buf, "(NULL)", sizeof(cfg_2_buf));
+    else
+    {
+        set_cfg(&ap_cfg[0], token, &params, cfg_2_buf, sizeof(cfg_2_buf));
+    }
+
+    token = strsep(&params, ";");
+    if (!strcmp(token, "NULL")) strncpy(cfg_5_buf, "(NULL)", sizeof(cfg_5_buf));
+    else
+    {
+        set_cfg(&ap_cfg[1], token, &params, cfg_5_buf, sizeof(cfg_5_buf));
+    }
+
+    LOGI("wifi_steering_setGroup()\n\tsteeringgroupIndex=%u\n\tcfg_2: %s\n\tcfg_5: %s\n",
+        steeringgroupIndex, cfg_2_buf, cfg_5_buf);
+
+    return wifi_steering_setGroup(steeringgroupIndex, 2, ap_cfg);
+}
+#else
 static bool handle_set_group(char *params)
 {
     char *token;
@@ -320,6 +368,7 @@ static bool handle_set_group(char *params)
 
     return wifi_steering_setGroup(steeringgroupIndex, cfg_2_ptr, cfg_5_ptr);
 }
+#endif
 
 static void str_to_mac_addr(const char *mac_str, mac_address_t mac)
 {
@@ -493,7 +542,11 @@ static bool handle_setBTMRequest(char *params)
     }
 
     LOGI("wifi_setBTMRequest() %s\n", buf);
+#ifdef WIFI_HAL_VERSION_3_PHASE2
+    return wifi_setBTMRequest(apIndex, peerMac, &request);
+#else
     return wifi_setBTMRequest(apIndex, (CHAR *)peerMac, &request);
+#endif
 }
 
 static bool handle_setRMBeaconRequest(char *params)
@@ -554,7 +607,11 @@ static bool handle_setRMBeaconRequest(char *params)
             out_DialogToken, request.opClass, request.mode, request.channel,
             request.randomizationInterval, request.duration, request.ssidPresent,
             FMT_MAC(request.bssid));
+#ifdef WIFI_HAL_VERSION_3_PHASE2
+    return wifi_setRMBeaconRequest(apIndex, peerMac, &request, &out_DialogToken);
+#else
     return wifi_setRMBeaconRequest(apIndex, (CHAR *)&peerMac, &request, &out_DialogToken);
+#endif
 }
 
 static bool handle_clientDisconnect(char *params)
@@ -954,13 +1011,13 @@ exit:
 
 static void print_usage()
 {
-   LOG("\nusage: bs_testd [-v] [-B] [-b <ip:port>] [-s <ip:port>]\n"
-          "\n\t-v: \n\t\tEnable verbose mode\n"
-          "\n\t-b: \n\t\tbind ip and port number on which 'bs_testd' listens for commands from 'bs_cmd'. Default: 0.0.0.0:%d (any)\n"
-          "\n\t-B: \n\t\trun as a deamon in background\n"
-          "\n\t-s: \n\t\tif set, all output is additionally sent over UDP socket to the specified ip:port. Default: 0.0.0.0:%d\n", DEFAULT_PORT,
-          DEFAULT_OUTPUT_PORT);
-   exit(0);
+    LOG("\nusage: bs_testd [-v] [-B] [-b <ip:port>] [-s <ip:port>]\n"
+        "\n\t-v: \n\t\tEnable verbose mode\n"
+        "\n\t-b: \n\t\tbind ip and port number on which 'bs_testd' listens for commands from 'bs_cmd'. Default: 0.0.0.0:%d (any)\n"
+        "\n\t-B: \n\t\trun as a deamon in background\n"
+        "\n\t-s: \n\t\tif set, all output is additionally sent over UDP socket to the specified ip:port. Default: 0.0.0.0:%d\n", DEFAULT_PORT,
+        DEFAULT_OUTPUT_PORT);
+    exit(0);
 }
 
 static bool handle_args(args_t *args, int argc, char **argv)

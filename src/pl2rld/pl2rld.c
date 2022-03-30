@@ -338,7 +338,7 @@ void pl2rld_client_recv_log(pclient_t *pc, pl2rl_msg_t *msg, char *text)
 
     (void)sev; // currently not used
     RDK_LOG(rdk_level, RDK_LOGGER_MODULE,
-            "%s[%ld]: %s: %.*s\n",
+            "%s[%u]: %s: %.*s\n",
             pc->name,
             pc->pid,
             mod,

@@ -29,9 +29,6 @@
 ##############################################################################
 
 UNIT_SRC := $(TARGET_COMMON_SRC)
-ifneq ($(CONFIG_RDK_DISABLE_SYNC),y)
-UNIT_SRC := $(filter-out src/target_mac_learn.c,$(UNIT_SRC))
-endif
 
 UNIT_SRC_DIR := $(OVERRIDE_DIR)/src
 
@@ -45,19 +42,18 @@ UNIT_SRC_TOP += $(UNIT_SRC_DIR)/log.c
 
 ifneq ($(CONFIG_RDK_DISABLE_SYNC),y)
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/sync.c
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/maclearn.c
 endif
 
-UNIT_SRC_TOP += $(UNIT_SRC_DIR)/bsal.c
+UNIT_SRC_TOP += $(if $(CONFIG_RDK_WIFI_HAL_VERSION_3_PHASE2), $(UNIT_SRC_DIR)/bsal.c, $(UNIT_SRC_DIR)/bsal_legacy.c)
 UNIT_SRC_TOP += $(UNIT_SRC_DIR)/cloud_config.c
 UNIT_SRC_TOP += $(if $(CONFIG_RDK_WPS_SUPPORT), $(UNIT_SRC_DIR)/wps.c)
 UNIT_SRC_TOP += $(if $(CONFIG_RDK_MULTI_AP_SUPPORT), $(UNIT_SRC_DIR)/multi_ap.c)
 
 UNIT_CFLAGS  += -I$(OVERRIDE_DIR)/inc
 UNIT_CFLAGS  += -DENABLE_MESH_SOCKETS
+UNIT_CLFAGS  += -DTARGET_H=\"target_RDKB.h\"
 
 UNIT_DEPS    += $(PLATFORM_DIR)/src/lib/devinfo
-UNIT_DEPS    += $(PLATFORM_DIR)/src/lib/osync_hal
 UNIT_DEPS    += src/lib/schema
 UNIT_DEPS    += src/lib/const
 UNIT_DEPS    += src/lib/osp

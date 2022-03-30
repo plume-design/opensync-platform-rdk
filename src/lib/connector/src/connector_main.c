@@ -36,7 +36,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "kconfig.h"
 
 #include "connector_main.h"
-#include "connector_lan.h"
+#include "connector_dm.h"
 
 
 /******************************************************************************/
@@ -72,10 +72,13 @@ bool connector_init(struct ev_loop *loop, const struct connector_ovsdb_api *api)
         LOGE("Cdm_Init failed: %s", Cdm_StrError(err));
         return false;
     }
+    LOGI("Cleaning all DHCP IP reservations in RDK");
+    dhcp_reservation_clean_dm();
 
-    LOGI("Populating OVSDB from RDK");
+    LOGI("Cleaning all NAT port mappings in RDK");
+    portforward_clean_dm();
 
-    if (connector_lan_br_config_push_ovsdb(connector_api))
+    if (connector_lan_br_config_push_ovsdb_dm(connector_api))
         LOGW("Failed to push lan config to OVSDB");
 
     return true;
@@ -119,9 +122,33 @@ bool connector_sync_inet(const struct schema_Wifi_Inet_Config *iconf)
     {
         if (iconf->inet_addr_changed || iconf->netmask_changed || iconf->dhcpd_changed )
         {
-            connector_lan_br_config_push_rdk(iconf);
+            connector_lan_br_config_push_rdk_dm(iconf);
         }
     }
 
+    return true;
+}
+
+bool connector_dhcp_reservation_add(const struct schema_DHCP_reserved_IP *rip)
+{
+    dhcp_reservation_push_dm(rip);
+    return true;
+}
+
+bool connector_dhcp_reservation_del(const struct schema_DHCP_reserved_IP *rip)
+{
+    dhcp_reservation_del_dm(rip);
+    return true;
+}
+
+bool connector_portforward_add(const struct schema_IP_Port_Forward *iconf)
+{
+    portforward_push_dm(iconf);
+    return true;
+}
+
+bool connector_portforward_del(const struct schema_IP_Port_Forward *iconf)
+{
+    portforward_del_dm(iconf);
     return true;
 }

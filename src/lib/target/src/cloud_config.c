@@ -27,7 +27,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target.h"
 #include "target_internal.h"
 #include "log.h"
-#include "osync_hal.h"
 #include "devinfo.h"
 
 typedef void (*devconf_cb_t)(
@@ -48,10 +47,10 @@ void cloud_config_mode_init(void)
         LOGE("Failed to initialize cloud mode");
         return;
     }
-    mode = OSYNC_HAL_DEVINFO_CLOUD_MODE_MONITOR;
+    mode = RADIO_CLOUD_MODE_MONITOR;
     if (!strncasecmp(buf, "Full", sizeof(buf)))
     {
-        mode = OSYNC_HAL_DEVINFO_CLOUD_MODE_FULL;
+        mode = RADIO_CLOUD_MODE_FULL;
     }
     radio_cloud_mode_set(mode);
 }
@@ -83,7 +82,7 @@ static bool update_redirector_addr(void)
     memset(&awlan, 0, sizeof(awlan));
     schema_filter_init(&filter, "+");
 
-    if (osync_hal_devinfo_get_redirector_addr(buf, sizeof(buf)) != OSYNC_HAL_SUCCESS)
+    if (!devinfo_getv(DEVINFO_MESH_URL, buf, sizeof(buf)))
     {
         LOGW("### Failed to get redirector address, using default ###");
         memset(buf, 0, sizeof(buf));
@@ -102,27 +101,21 @@ static bool update_redirector_addr(void)
 
 bool target_device_config_register(void *devconf_cb)
 {
-    osync_hal_devinfo_cloud_mode_t mode = OSYNC_HAL_DEVINFO_CLOUD_MODE_UNKNOWN;
-
     awlan_cb = devconf_cb;
+    char buf[128];
 
-    if (osync_hal_devinfo_get_cloud_mode(&mode) != OSYNC_HAL_SUCCESS)
-    {
-        LOGE("Cannot get cloud mode");
-        return false;
-    }
+    memset(buf, 0, sizeof(buf));
 
-    switch (mode)
+    if (devinfo_getv(DEVINFO_MESH_STATE, ARRAY_AND_SIZE(buf)))
     {
-        case OSYNC_HAL_DEVINFO_CLOUD_MODE_FULL:
+        if (!strncmp(buf, "full", 4) || !strncmp(buf, "Full", 4))
+        {
             cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_CLOUD);
-            break;
-        case OSYNC_HAL_DEVINFO_CLOUD_MODE_MONITOR:
+        }
+        else
+        {
             cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_MONITOR);
-            break;
-        default:
-            LOGW("Failed to set device mode! :: unknown value = %d", mode);
-            return false;
+        }
     }
 
     return update_redirector_addr();

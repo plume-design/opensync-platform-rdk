@@ -29,6 +29,12 @@ config RDK_HOME_AP_50_IFNAME
     help
         Backhaul AP 5 GHz name that will be used
 
+config RDK_HOME_AP_60_IFNAME
+    string "Home AP 6 GHz interface name"
+    default "hom-ap-60"
+    help
+        Backhaul AP 6 GHz name that will be used
+
 config RDK_BHAUL_AP_24_IFNAME
     string "Backhaul AP 2.4 GHz interface name"
     default "bhaul-ap-24"
@@ -41,6 +47,12 @@ config RDK_BHAUL_AP_50_IFNAME
     help
         Backhaul AP 5 GHz name that will be used
 
+config RDK_BHAUL_AP_60_IFNAME
+    string "Backhaul AP 6 GHz interface name"
+    default "bhaul-ap-60"
+    help
+        Backhaul AP 6 GHz name that will be used
+
 config RDK_ONBOARD_AP_24_IFNAME
     string "Onboard AP 2.4 GHz interface name"
     default "onboard-ap-24"
@@ -52,6 +64,36 @@ config RDK_ONBOARD_AP_50_IFNAME
     default "onboard-ap-50"
     help
         Onboard AP 5 GHz name that will be used
+
+config RDK_ONBOARD_AP_60_IFNAME
+    string "Onboard AP 6 GHz interface name"
+    default "onboard-ap-60"
+    help
+        Onboard AP 6 GHz name that will be used
+
+config RDK_6G_RADIO_SUPPORT
+    bool "6G radio support"
+    default n
+    help
+        Support for 6G radio
+
+config RDK_CHIPSET_NAME_2G
+    string "2.4 GHz radio wifi chipset name"
+    default "Chipset2G"
+    help
+        Human-readable Wifi chipset name of 2.4GHz radio
+
+config RDK_CHIPSET_NAME_5G
+    string "5 GHz radio wifi chipset name"
+    default "Chipset5G"
+    help
+        Human-readable Wifi chipset name of 5GHz radio
+
+config RDK_CHIPSET_NAME_6G
+    string "6 GHz radio wifi chipset name"
+    default "Chipset6G"
+    help
+        Human-readable Wifi chipset name of 6GHz radio
 
 config RDK_CONTROL_ALL_VAPS
     bool "Allow OpenSync to control all VAP interfaces"
@@ -92,13 +134,6 @@ config RDK_HAS_ASSOC_REQ_IES
         the band steering manager will not have all the information
         until the next CONNECT event.
 
-config RDK_11AX_SUPPORT
-    bool "The 802.11ax standard is supported"
-    default n
-    help
-        Select true if the platform is 802.11ax capable and
-        telemetry HALs are able to provide 11ax related data.
-
 config RDK_MULTI_PSK_SUPPORT
     bool "Multi-PSK support"
     default n
@@ -134,110 +169,37 @@ config RDK_MGMT_FRAME_CB_SUPPORT
         OpenSync received raw management frames. OpenSync
         parses those frames for Band Steering purpose.
 
-menu "OSync HAL API"
-
-choice
-    prompt "osync_hal_init()"
-    default OSYNC_HAL_USE_DEFAULT_INIT
-    config OSYNC_HAL_USE_DEFAULT_INIT
-        bool "osync_hal_init() default"
-
-        help
-            Default implementation of osync_hal_init()
-
-    osource "vendor/*/kconfig/Kconfig.osync_hal.init_backend"
-endchoice
-
-choice
-    prompt "osync_hal_ready()"
-    default OSYNC_HAL_USE_DEFAULT_READY
-    config OSYNC_HAL_USE_DEFAULT_READY
-        bool "osync_hal_ready() default"
-
-        help
-            Default implementation of osync_hal_ready()
-
-    osource "vendor/*/kconfig/Kconfig.osync_hal.ready_backend"
-endchoice
-
-choice
-    prompt "osync_hal_deinit()"
-    default OSYNC_HAL_USE_DEFAULT_DEINIT
-    config OSYNC_HAL_USE_DEFAULT_DEINIT
-        bool "osync_hal_deinit() default"
-
-        help
-            Default implementation of osync_hal_deinit()
-
-    osource "vendor/*/kconfig/Kconfig.osync_hal.deinit_backend"
-endchoice
-
-choice
-    prompt "osync_hal_fetch_connected_clients()"
-    default OSYNC_HAL_USE_DEFAULT_FETCH_CONNECTED_CLIENTS
-    config OSYNC_HAL_USE_DEFAULT_FETCH_CONNECTED_CLIENTS
-        bool "osync_hal_fetch_connected_clients() default"
-
-        help
-            Default implementation of osync_hal_fetch_connected_clients()
-
-    osource "vendor/*/kconfig/Kconfig.osync_hal.fetch_connected_clients_backend"
-endchoice
-
-choice
-    prompt "osync_hal_devinfo_get_cloud_mode()"
-    default OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE
-    config OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_CLOUD_MODE
-        bool "osync_hal_devinfo_get_cloud_mode() default"
-
-        help
-            Default implementation of osync_hal_devinfo_get_cloud_mode()
-
-    osource "vendor/*/kconfig/Kconfig.osync_hal.devinfo_get_cloud_mode_backend"
-endchoice
-
-choice
-    prompt "osync_hal_devinfo_get_redirector_addr()"
-    default OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR
-        config OSYNC_HAL_USE_DEFAULT_DEVINFO_GET_REDIRECTOR_ADDR
-        bool "osync_hal_devinfo_get_redirector_addr() default"
-
-        help
-            Default implementation of osync_hal_devinfo_get_redirector_addr()
-
-    osource "vendor/*/kconfig/Kconfig.osync_hal.devinfo_get_redirector_addr_backend"
-endchoice
-
-choice
-    prompt "osync_hal_inet_set_iface_config()"
-    default OSYNC_HAL_USE_DEFAULT_INET_SET_IFACE_CONFIG
-        config OSYNC_HAL_USE_DEFAULT_INET_SET_IFACE_CONFIG
-        bool "osync_hal_inet_set_iface_config() default"
-
-        help
-            Default implementation of osync_hal_inet_set_iface_config()
-
-    osource "vendor/*/kconfig/Kconfig.osync_hal.inet_set_iface_config_backend"
-endchoice
-
-choice
-    prompt "osync_hal_get_country_code()"
-    default OSYNC_HAL_USE_DEFAULT_GET_COUNTRY_CODE
-        config OSYNC_HAL_USE_DEFAULT_GET_COUNTRY_CODE
-        bool "osync_hal_get_country_code() default"
-
-        help
-            Default implementation of osync_hal_get_country_code()
-
-    osource "vendor/*/kconfig/Kconfig.osync_hal.get_country_code_backend"
-endchoice
-
-endmenu
-
 config RDK_DHCP_LEASES_PATH
     string "DHCP leases path"
-    default "/tmp/dnsmasq.leases"
+    default "/nvram/dnsmasq.leases"
     help
         DHCP leases path
+
+config RDK_SYNC_EXT_HOME_ACLS
+    bool "Sync externally configured ACLs on home APs to VIF config"
+    default n
+    help
+        This enables synchronization of externally configured ACLs on
+        home APs to VIF Config and State tables to prevent their removal
+        upon next event of applying configuration.
+
+config RDK_WIFI_HAL_VERSION_3_PHASE2
+    bool "Enable WIFI_HAL_VERSION_3_PHASE2"
+    default n
+    help
+        Enable wifi_hal 3.0 phase 2
+
+if MANAGER_XM
+
+config RDK_CONNECTOR_DHCP_SYNC_LAN_MANAGEMENT
+    bool "Connector sync LAN IP during DHCP setup"
+    default n
+    help
+        Before setting DHCP config sync LAN IP and network subnet in TR-181 DM.
+        Sync Device.X_CISCO_COM_DeviceControl.LanManagementEntry.1.LanIPAddress
+        and Device.X_CISCO_COM_DeviceControl.LanManagementEntry.1.LanSubnetMask
+
+
+endif
 
 endif

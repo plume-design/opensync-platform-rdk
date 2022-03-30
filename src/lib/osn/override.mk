@@ -33,9 +33,9 @@ ifneq ($(CONFIG_RDK_DISABLE_SYNC),y)
 UNIT_SRC_DIR := $(OVERRIDE_DIR)/src
 UNIT_SRC_TOP += $(if $(CONFIG_OSN_BACKEND_DHCPV4_SERVER_RDK),$(UNIT_SRC_DIR)/osn_dhcps.c)
 
-UNIT_DEPS += $(PLATFORM_DIR)/src/lib/osync_hal
 UNIT_DEPS += src/lib/log
 UNIT_DEPS += src/lib/daemon
 UNIT_DEPS += src/lib/evx
 UNIT_DEPS += src/lib/ds
+UNIT_DEPS += src/lib/target
 endif

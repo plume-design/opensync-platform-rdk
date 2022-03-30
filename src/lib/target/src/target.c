@@ -35,8 +35,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target_internal.h"
 #include "osp_unit.h"
 
-#include "osync_hal.h"
-
 #define MODULE_ID LOG_MODULE_ID_OSA
 
 struct ev_loop *wifihal_evloop = NULL;
@@ -48,12 +46,6 @@ struct ev_loop *wifihal_evloop = NULL;
 bool target_ready(struct ev_loop *loop)
 {
     char        tmp[64];
-
-    if (osync_hal_ready() != OSYNC_HAL_SUCCESS)
-    {
-        LOGW("Target not ready, OSync HAL not ready");
-        return false;
-    }
 
     // Check if we can read important entity information
 
@@ -93,12 +85,6 @@ bool target_init(target_init_opt_t opt, struct ev_loop *loop)
                    // the maximum length of version string. It is usually
                    // something like "2.0.0", so assume 64 is enough.
 
-    if (osync_hal_init() != OSYNC_HAL_SUCCESS)
-    {
-        LOGE("OSync HAL init failed");
-        return false;
-    }
-
     wifihal_evloop = loop;
 
     ret = wifi_getHalVersion(str);
@@ -137,11 +123,6 @@ bool target_init(target_init_opt_t opt, struct ev_loop *loop)
 
 bool target_close(target_init_opt_t opt, struct ev_loop *loop)
 {
-    if (osync_hal_deinit() != OSYNC_HAL_SUCCESS)
-    {
-        LOGW("OSync HAL deinit failed.");
-    }
-
     switch (opt)
     {
         case TARGET_INIT_MGR_WM:

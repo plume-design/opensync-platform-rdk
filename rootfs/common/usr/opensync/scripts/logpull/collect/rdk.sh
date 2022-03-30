@@ -1,3 +1,5 @@
+#!/bin/sh
+
 # Copyright (c) 2017, Plume Design Inc. All rights reserved.
 # 
 # Redistribution and use in source and binary forms, with or without
@@ -22,19 +24,34 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-UNIT_NAME := osync_hal
+#
+# Collect RDK info
+#
+. "$LOGPULL_LIB"
 
-UNIT_TYPE := LIB
+collect_platform_rdk()
+{
 
-UNIT_DEPS := src/lib/common
-UNIT_DEPS += $(PLATFORM_DIR)/src/lib/devinfo
+    journalctl > "$LOGPULL_TMP_DIR/messages_$(date +"%Y%m%d_%H%M%S")"
 
-UNIT_SRC := src/init.c
-UNIT_SRC += src/clients.c
-UNIT_SRC += src/inet.c
-UNIT_SRC += src/devinfo.c
-UNIT_SRC += src/radio.c
+    collect_cmd arp -an
+    collect_cmd brctl show
+    collect_cmd iw dev
 
-UNIT_CFLAGS += -I$(UNIT_PATH)/inc
+    # Device info
+    for x in -mo -sn -fw -ms -mu -cmac -cip -cipv6 -emac -eip -eipv6 -lmac -lip -lipv6; do
+        collect_cmd deviceinfo.sh $x
+    done
 
-UNIT_EXPORT_CFLAGS := $(UNIT_CFLAGS)
+    # RDK Logs
+    if [ -d /rdklogs/logs ]; then
+        collect_dir /rdklogs/logs
+    fi
+
+    # Collect all core dump files
+    mkdir -p /tmp/Core
+    mv /tmp/*.core.gz  /tmp/Core/
+    collect_dir /tmp/Core
+}
+
+collect_platform_rdk
