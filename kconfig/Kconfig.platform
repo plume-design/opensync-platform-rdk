@@ -149,6 +149,10 @@ config RDK_DISABLE_SYNC
     bool "RDK disable sync with MeshAgent"
     default n
 
+config RDK_EXTENDER
+    bool "RDK Extender device"
+    default n
+
 config RDK_WPS_SUPPORT
     bool "WPS support"
     default n

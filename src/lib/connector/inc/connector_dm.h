@@ -24,8 +24,8 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef CONNECTOR_LAN_H_INCLUDED
-#define CONNECTOR_LAN_H_INCLUDED
+#ifndef CONNECTOR_DM_H_INCLUDED
+#define CONNECTOR_DM_H_INCLUDED
 
 int connector_lan_br_config_push_ovsdb_dm(struct connector_ovsdb_api *connector_api);
 int connector_lan_br_config_push_rdk_dm(const struct schema_Wifi_Inet_Config *inet);
@@ -39,4 +39,4 @@ void portforward_push_dm(const struct schema_IP_Port_Forward *pschema);
 int portforward_del_dm(const struct schema_IP_Port_Forward *pschema);
 int portforward_clean_dm(void);
 
-#endif /* CONNECTOR_LAN_H_INCLUDED */
+#endif /* CONNECTOR_DM_H_INCLUDED */

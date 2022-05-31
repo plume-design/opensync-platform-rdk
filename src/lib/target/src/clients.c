@@ -168,10 +168,18 @@ static void clients_hal_async_cb(EV_P_ ev_async *w, int revents)
             }
             else
             {
-                clients_connection(cbe->ssid_index, mac, key.wifi_keyId);
+                if (strlen(key.wifi_keyId) == 0)
+                {
+                    // Empty keyid means that password is stored in config file
+                    clients_connection(cbe->ssid_index, mac, cached_key_ids[cbe->ssid_index]);
+                }
+                else
+                {
+                    clients_connection(cbe->ssid_index, mac, key.wifi_keyId);
+                }
             }
 #else
-            clients_connection(cbe->ssid_index, mac, cached_key_id);
+            clients_connection(cbe->ssid_index, mac, cached_key_ids[cbe->ssid_index]);
 #endif
         }
         else
@@ -232,10 +240,18 @@ bool clients_hal_fetch_existing(unsigned int apIndex)
         }
         else
         {
-            clients_connection(apIndex, mac, key.wifi_keyId);
+            if (strlen(key.wifi_keyId) == 0)
+            {
+                // Empty keyid means that password is stored in config file
+                clients_connection(apIndex, mac, cached_key_ids[apIndex]);
+            }
+            else
+            {
+                clients_connection(apIndex, mac, key.wifi_keyId);
+            }
         }
 #else
-        clients_connection(apIndex, mac, cached_key_id);
+        clients_connection(apIndex, mac, cached_key_ids[apIndex]);
 #endif
     }
     free(associated_dev);

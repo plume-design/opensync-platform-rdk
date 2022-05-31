@@ -60,21 +60,18 @@ static c_item_t map_acl_modes[] =
 
 #define DEFAULT_ENC_MODE        "TKIPandAESEncryption"
 
-#define OVSDB_SECURITY_KEY_MGMT_DPP        "dpp"
-#define OVSDB_SECURITY_KEY_MGMT_WPA_PSK    "wpa-psk"
-#define OVSDB_SECURITY_KEY_MGMT_WPA2_PSK   "wpa2-psk"
-#define OVSDB_SECURITY_KEY_MGMT_WPA2_EAP   "wpa2-eap"
-#define OVSDB_SECURITY_KEY_MGMT_SAE        "sae"
-#define RDK_SECURITY_KEY_MGMT_OPEN         "None"
-#define RDK_SECURITY_KEY_MGMT_WPA_PSK      "WPA-Personal"
-#define RDK_SECURITY_KEY_MGMT_WPA2_PSK     "WPA2-Personal"
-#define RDK_SECURITY_KEY_MGMT_WPA_WPA2_PSK "WPA-WPA2-Personal"
-#define RDK_SECURITY_KEY_MGMT_WPA2_EAP     "WPA2-Enterprise"
-#define RDK_SECURITY_KEY_MGMT_WPA3         "WPA3-Sae"
-
-#ifndef CONFIG_RDK_MULTI_AP_SUPPORT
-char cached_key_id[64] = "key";
-#endif
+#define OVSDB_SECURITY_KEY_MGMT_DPP           "dpp"
+#define OVSDB_SECURITY_KEY_MGMT_WPA_PSK       "wpa-psk"
+#define OVSDB_SECURITY_KEY_MGMT_WPA2_PSK      "wpa2-psk"
+#define OVSDB_SECURITY_KEY_MGMT_WPA2_EAP      "wpa2-eap"
+#define OVSDB_SECURITY_KEY_MGMT_SAE           "sae"
+#define RDK_SECURITY_KEY_MGMT_OPEN            "None"
+#define RDK_SECURITY_KEY_MGMT_WPA_PSK         "WPA-Personal"
+#define RDK_SECURITY_KEY_MGMT_WPA2_PSK        "WPA2-Personal"
+#define RDK_SECURITY_KEY_MGMT_WPA_WPA2_PSK    "WPA-WPA2-Personal"
+#define RDK_SECURITY_KEY_MGMT_WPA2_EAP        "WPA2-Enterprise"
+#define RDK_SECURITY_KEY_MGMT_WPA3            "WPA3-Sae"
+#define RDK_SECURITY_KEY_MGMT_WPA3_TRANSITION "WPA3-Personal-Transition"
 
 static bool ssid_index_to_vap_info(UINT ssid_index, wifi_vap_info_map_t *map, wifi_vap_info_t **vap_info)
 {
@@ -144,7 +141,7 @@ static bool acl_to_state(
 
     for (i = 0; i < acl_number; i++)
     {
-        sprintf(acl_string, sizeof(acl_string), MAC_ADDR_FMT, MAC_ADDR_UNPACK(acl_list[i]));
+        snprintf(acl_string, sizeof(acl_string), MAC_ADDR_FMT, MAC_ADDR_UNPACK(acl_list[i]));
         SCHEMA_VAL_APPEND(vstate->mac_list, acl_string);
     }
 
@@ -187,7 +184,7 @@ static bool acl_to_config(const wifi_vap_info_t *vap_info, struct schema_Wifi_VI
 
     for (i = 0; i < acl_number; i++)
     {
-        sprintf(acl_string, sizeof(acl_string), MAC_ADDR_FMT, MAC_ADDR_UNPACK(acl_list[i]));
+        snprintf(acl_string, sizeof(acl_string), MAC_ADDR_FMT, MAC_ADDR_UNPACK(acl_list[i]));
         SCHEMA_VAL_APPEND(vconf->mac_list, acl_string);
     }
 
@@ -433,6 +430,18 @@ static bool security_key_mgmt_hal_to_ovsdb(
             if (vstate) SCHEMA_VAL_APPEND(vstate->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_SAE);
             if (vconfig) SCHEMA_VAL_APPEND(vconfig->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_SAE);
             return true;
+        case wifi_security_mode_wpa3_transition:
+            if (vstate)
+            {
+                SCHEMA_VAL_APPEND(vstate->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_WPA2_PSK);
+                SCHEMA_VAL_APPEND(vstate->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_SAE);
+            }
+            if (vconfig)
+            {
+                SCHEMA_VAL_APPEND(vconfig->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_WPA2_PSK);
+                SCHEMA_VAL_APPEND(vconfig->wpa_key_mgmt, OVSDB_SECURITY_KEY_MGMT_SAE);
+            }
+            return true;
         case wifi_security_mode_wpa2_enterprise:
             // The only 'enterprise' encryption present in OVSDB schema is WPA2-Enterprise, so skip
             // other RDK 'enterprise' types.
@@ -477,9 +486,8 @@ static bool get_psks(
               ssid_index);
     }
 
-#ifndef CONFIG_RDK_MULTI_PSK_SUPPORT
-    SCHEMA_KEY_VAL_APPEND(vstate->wpa_psks, cached_key_id, key.key);
-#else
+    SCHEMA_KEY_VAL_APPEND(vstate->wpa_psks, cached_key_ids[ssid_index], key.key);
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
     memset(keys, 0, sizeof(keys));
     LOGT("wifi_getMultiPskKeys() index=%d", ssid_index);
     ret = wifi_getMultiPskKeys(ssid_index, keys, MAX_MULTI_PSK_KEYS);
@@ -567,6 +575,11 @@ static bool security_key_mgmt_ovsdb_to_hal(const struct schema_Wifi_VIF_Config *
     {
         *mode = wifi_security_mode_wpa_wpa2_personal;
     }
+    else if (security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_WPA2_PSK) &&
+                 security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_SAE))
+    {
+        *mode = wifi_security_mode_wpa3_transition;
+    }
     else if (security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_WPA_PSK))
     {
         *mode = wifi_security_mode_wpa_personal;
@@ -603,6 +616,11 @@ static const char *security_key_mgmt_ovsdb_to_sync(const struct schema_Wifi_VIF_
             security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_WPA2_PSK))
     {
         return RDK_SECURITY_KEY_MGMT_WPA_WPA2_PSK;
+    }
+    if (security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_WPA2_PSK) &&
+            security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_SAE))
+    {
+        return RDK_SECURITY_KEY_MGMT_WPA3_TRANSITION;
     }
     if (security_wpa_key_mgmt_match(vconf, OVSDB_SECURITY_KEY_MGMT_WPA_PSK))
     {
@@ -737,7 +755,7 @@ bool vif_external_security_update(int ssid_index)
          if (!security_key_mgmt_hal_to_ovsdb(mode, NULL, &vconf)) return false;
 
          SCHEMA_SET_INT(vconf.wpa, 1);
-         SCHEMA_KEY_VAL_APPEND(vconf.wpa_psks, cached_key_id, vap_info->u.bss_info.security.u.key.key);
+         SCHEMA_KEY_VAL_APPEND(vconf.wpa_psks, cached_key_ids[ssid_index], vap_info->u.bss_info.security.u.key.key);
     }
 
     LOGD("Updating VIF for new security");
@@ -1022,37 +1040,44 @@ static bool set_password(
         const struct schema_Wifi_VIF_Config *vconf,
         wifi_vap_info_t *vap_info)
 {
-#ifndef CONFIG_RDK_MULTI_PSK_SUPPORT
     STRSCPY(vap_info->u.bss_info.security.u.key.key, vconf->wpa_psks[0]);
-    STRSCPY(cached_key_id, vconf->wpa_psks_keys[0]);
-#else
-    wifi_key_multi_psk_t *keys = NULL;
-    int i;
-    INT ret;
+    STRSCPY(cached_key_ids[ssid_index], vconf->wpa_psks_keys[0]);
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
+    if (vconf->wpa_psks_len > 1)
+    {
+        wifi_key_multi_psk_t *keys = NULL;
+        int i;
+        INT ret;
 
-    keys = calloc(vconf->wpa_psks_len, sizeof(wifi_key_multi_psk_t));
-    if (keys == NULL)
-    {
-        LOGE("%s: Failed to allocate memory for multi-psk keys, index=%d", __func__,
-                ssid_index);
-        return false;
-    }
+        keys = CALLOC(vconf->wpa_psks_len - 1, sizeof(wifi_key_multi_psk_t));
 
-    for (i = 0; i < vconf->wpa_psks_len; i++)
-    {
-        STRSCPY(keys[i].wifi_keyId, vconf->wpa_psks_keys[i]);
-        STRSCPY(keys[i].wifi_psk, vconf->wpa_psks[i]);
-        // MAC set to 00:00:00:00:00:00
+        for (i = 0; i < vconf->wpa_psks_len - 1; i++)
+        {
+            STRSCPY(keys[i].wifi_keyId, vconf->wpa_psks_keys[i + 1]);
+            STRSCPY(keys[i].wifi_psk, vconf->wpa_psks[i + 1]);
+            // MAC set to 00:00:00:00:00:00
+        }
+        LOGT("wifi_pushMultiPskKeys() index=%d", ssid_index);
+        ret = wifi_pushMultiPskKeys(ssid_index, keys, vconf->wpa_psks_len - 1);
+        FREE(keys);
+        if (ret != RETURN_OK)
+        {
+            LOGW("wifi_pushMultiPskKeys() FAILED index=%d", ssid_index);
+            return false;
+        }
+        LOGT("wifi_pushMultiPskKeys() OK index=%d", ssid_index);
     }
-    LOGT("wifi_pushMultiPskKeys() index=%d", ssid_index);
-    ret = wifi_pushMultiPskKeys(ssid_index, keys, vconf->wpa_psks_len);
-    free(keys);
-    if (ret != RETURN_OK)
+    else
     {
-        LOGW("wifi_pushMultiPskKeys() FAILED index=%d", ssid_index);
-        return false;
+        // Clean multi-psk keys
+        INT ret;
+        ret = wifi_pushMultiPskKeys(ssid_index, NULL, 0);
+        if (ret != RETURN_OK)
+        {
+            LOGW("wifi_pushMultiPskKeys() FAILED index=%d (cleaning)", ssid_index);
+            return false;
+        }
     }
-    LOGT("wifi_pushMultiPskKeys() OK index=%d", ssid_index);
 #endif
 
     return true;
@@ -1172,6 +1197,7 @@ bool target_vif_config_set2(
     wifi_vap_info_map_t vap_info_map_desired;
     wifi_vap_info_t *vap_info = NULL;
     bool trigger_reconfig = false;
+    c_item_t *citem = NULL;
 
     if (!vif_ifname_to_idx(target_map_ifname((char *)vconf->if_name), &ssid_index))
     {
@@ -1211,14 +1237,18 @@ bool target_vif_config_set2(
     }
     if (changed->ssid_broadcast)
     {
-        vap_info->u.bss_info.showSsid = vconf->ssid_broadcast ? TRUE : FALSE;
+        citem = c_get_item_by_str(map_enable_disable, vconf->ssid_broadcast);
+        if (!citem)
+        {
+            LOGE("%s: Unknown SSID broadcast option \"%s\"!", vconf->if_name, vconf->ssid_broadcast);
+            return false;
+        }
+        vap_info->u.bss_info.showSsid = (BOOL)citem->key;
         trigger_reconfig = true;
 #ifndef CONFIG_RDK_DISABLE_SYNC
-        if (!sync_send_ssid_broadcast_change(ssid_index, vconf->ssid_broadcast ?
-            TRUE : FALSE))
+        if (!sync_send_ssid_broadcast_change(ssid_index, vap_info->u.bss_info.showSsid))
         {
-            LOGW("%s: Failed to sync SSID Broadcast change to %s",
-                    vconf->if_name, (vconf->ssid_broadcast ? "true" : "false"));
+            LOGW("%s: Failed to sync SSID Broadcast change to %s", vconf->if_name, vconf->ssid_broadcast);
         }
 #endif
     }

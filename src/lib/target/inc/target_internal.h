@@ -169,11 +169,10 @@ typedef enum
 
 typedef void (*sync_on_connect_cb_t)(void);
 
-#ifndef CONFIG_RDK_MULTI_AP_SUPPORT
 /* Current design requires caching key_id to have matching Wifi_VIF_Config/State tables.
  * To be removed in the future. */
-extern char cached_key_id[64];
-#endif
+typedef char psk_key_id_t[65];
+extern psk_key_id_t *cached_key_ids;
 
 bool                 maclearn_update(maclearn_type_t type,
                                     const char *mac,

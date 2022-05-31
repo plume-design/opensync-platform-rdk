@@ -75,6 +75,14 @@ typedef struct
     ds_tree_node_t      dst_node;
 } bsal_neighbor_t;
 
+typedef enum {
+    BSAL_CHAN_WIDTH_20 = 0,
+    BSAL_CHAN_WIDTH_40,
+    BSAL_CHAN_WIDTH_80,
+    BSAL_CHAN_WIDTH_160,
+    BSAL_CHAN_WIDTH_UNSUPPORTED
+} bsal_chwidth_t;
+
 static ds_key_cmp_t bssid_ifname_cmp;
 static ds_tree_t    bsal_ifaces_neighbors = DS_TREE_INIT(bssid_ifname_cmp,
                                                             bsal_neighbor_t,
@@ -139,9 +147,22 @@ static bsal_client_info_cache_t *bsal_find_client_info(const uint8_t *mac)
     return NULL;
 }
 
+static UINT bsal_convert_max_chwidth(UINT max_chwidth)
+{
+    if (max_chwidth <= 3) return max_chwidth;
+
+    if (max_chwidth == 20) return BSAL_CHAN_WIDTH_20;
+    if (max_chwidth == 40) return BSAL_CHAN_WIDTH_40;
+    if (max_chwidth == 80) return BSAL_CHAN_WIDTH_80;
+    if (max_chwidth == 160) return BSAL_CHAN_WIDTH_160;
+
+    return BSAL_CHAN_WIDTH_UNSUPPORTED;
+}
+
 static void bsal_client_info_update(const wifi_steering_evConnect_t *connect)
 {
     bsal_client_info_cache_t *client_info_cache;
+    UINT max_chanwidth;
 
     client_info_cache = bsal_find_client_info(connect->client_mac);
     if (client_info_cache == NULL)  /* Allocate new node */
@@ -160,7 +181,17 @@ static void bsal_client_info_update(const wifi_steering_evConnect_t *connect)
     client_info_cache->client.is_RRM_supported = connect->isRRMSupported;
     client_info_cache->client.band_cap_2G = connect->bandCap2G;
     client_info_cache->client.band_cap_5G = connect->bandCap5G;
-    client_info_cache->client.datarate_info.max_chwidth = connect->datarateInfo.maxChwidth;
+    max_chanwidth = bsal_convert_max_chwidth(connect->datarateInfo.maxChwidth);
+    if (max_chanwidth == BSAL_CHAN_WIDTH_UNSUPPORTED)
+    {
+        LOGW("Client "MAC_ADDR_FMT": unsupported maximum channel width %u",
+                MAC_ADDR_UNPACK(client_info_cache->mac), connect->datarateInfo.maxChwidth);
+        client_info_cache->client.datarate_info.max_chwidth = connect->datarateInfo.maxChwidth;
+    }
+    else
+    {
+        client_info_cache->client.datarate_info.max_chwidth = max_chanwidth;
+    }
     client_info_cache->client.datarate_info.max_streams = connect->datarateInfo.maxStreams;
     client_info_cache->client.datarate_info.phy_mode = connect->datarateInfo.phyMode;
     client_info_cache->client.datarate_info.max_MCS = connect->datarateInfo.maxMCS;

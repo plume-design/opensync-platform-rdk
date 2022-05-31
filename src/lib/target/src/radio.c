@@ -374,6 +374,8 @@ static ev_timer radio_resync_all_task_timer;
 static struct target_radio_ops g_rops;
 static bool g_resync_ongoing = false;
 
+psk_key_id_t *cached_key_ids;
+
 bool target_radio_config_need_reset()
 {
     return true;
@@ -1006,6 +1008,22 @@ bool target_radio_config_init2()
         LOGE("%s: failed to get radio count", __func__);
         return false;
     }
+    ret = wifi_getSSIDNumberOfEntries(&snum);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: failed to get radio count", __func__);
+        return false;
+    }
+
+    if (snum == 0)
+    {
+        LOGE("%s: no SSIDs detected", __func__);
+        return false;
+    }
+
+    cached_key_ids = CALLOC(snum, sizeof(psk_key_id_t));
+    for (s = 0; s < snum; s++)
+        STRSCPY(cached_key_ids[s], "key");
 
     for (r = 0; r < rnum; r++)
     {
@@ -1013,19 +1031,6 @@ bool target_radio_config_init2()
         radio_copy_config_from_state(r, &rstate, &rconfig);
         g_rops.op_rconf(&rconfig);
         g_rops.op_rstate(&rstate);
-
-        ret = wifi_getSSIDNumberOfEntries(&snum);
-        if (ret != RETURN_OK)
-        {
-            LOGE("%s: failed to get SSID count", __func__);
-            return false;
-        }
-
-        if (snum == 0)
-        {
-            LOGE("%s: no SSIDs detected", __func__);
-            continue;
-        }
 
         for (s = 0; s < snum; s++)
         {
