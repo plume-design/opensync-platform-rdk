@@ -545,6 +545,8 @@ bool vif_external_security_update(
     if (!strcmp(secMode, RDK_SECURITY_KEY_MGMT_OPEN))
     {
         SCHEMA_SET_INT(vconf.wpa, 0);
+        SCHEMA_UNSET_MAP(vconf.wpa_key_mgmt);
+        SCHEMA_UNSET_MAP(vconf.wpa_psks);
     }
     else
     {
