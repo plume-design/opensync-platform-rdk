@@ -749,6 +749,8 @@ bool vif_external_security_update(int ssid_index)
     if (mode == wifi_security_mode_none)
     {
         SCHEMA_SET_INT(vconf.wpa, 0);
+        SCHEMA_UNSET_MAP(vconf.wpa_key_mgmt);
+        SCHEMA_UNSET_MAP(vconf.wpa_psks);
     }
     else
     {
