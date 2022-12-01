@@ -34,6 +34,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
+#include "memutil.h"
 
 #define DEFAULT_IP "127.0.0.1"
 #define DEFAULT_PORT 5559
@@ -102,7 +103,7 @@ static bool parse_ip_port(const char *input_buffer, char *ip, size_t ipsize, int
     char *token;
     bool ret = false;
 
-    buf = strdup(input_buffer);
+    buf = STRDUP(input_buffer);
     handle = buf;
 
     token = strsep(&buf, ":");
@@ -122,7 +123,7 @@ static bool parse_ip_port(const char *input_buffer, char *ip, size_t ipsize, int
 
     ret = true;
 exit:
-    free(handle);
+    FREE(handle);
     return ret;
 }
 
@@ -137,9 +138,14 @@ static void print_usage()
     printf("\n\twifi_steering_eventRegister\n\t\tRegister debug callback that prints all the events\n");
     printf("\n\twifi_steering_eventUnregister\n"
            "\t\tUnregister debug callback\n");
+#ifndef WIFI_HAL_VERSION_3_PHASE2
     printf("\n\twifi_steering_setGroup <GROUP_INDEX> <CFG_2_FILE || NULL> <CFG_5_FILE || NULL>\n"
            "\t\tCFG_2_FILE, CFG_5_FILE - paths to files that contain wifi_steering_apConfig_t configuration "
            "for cfg_2 and cfg_5 parameters\n");
+#else
+    printf("\n\twifi_steering_setGroup <GROUP_INDEX> <NUM_ELEMENTS> <CFG_FILE || NULL> ...\n"
+           "\t\tCFG_FILE- path to file that contains wifi_steering_apConfig_t configuration"
+#endif
     printf("\n\twifi_steering_clientDisconnect <GROUP_INDEX> <AP_INDEX> <MAC> <TYPE> <REASON>\n"
            "\t\tTYPE - 0: unknown, 1: disassoc, 2: deauth\n");
     printf("\n\twifi_steering_clientMeasure <GROUP_INDEX> <AP_INDEX> <MAC>\n"
@@ -152,13 +158,13 @@ static void print_usage()
            "\t\tBTM_REQUEST_FILE - path to file that contains parameters of BTM Request (including list of candidates)\n");
     printf("\n\twifi_setRMBeaconRequest <AP_INDEX> <PEER_MAC> <DIAL_TOKEN> <RM_REQUEST_FILE>\n"
            "\t\tRM_REQUEST_FILE - path to file that contains parameters of RM Beacon Request, DIAL_TOKEN: INT number (by default 0)\n");
-    printf("\n\twifi_getBSSTransitionActivation <AP_INDEX>\n"
+    printf("\n\tget_bssTransitionActivated <AP_INDEX>\n"
            "\t\tCheck if BTM capability is enabled on the AP\n");
-    printf("\n\twifi_getNeighborReportActivation <AP_INDEX>\n"
+    printf("\n\tget_nbrReportActivated <AP_INDEX>\n"
            "\t\tCheck if RRM capability is enabled on the AP\n");
-    printf("\n\twifi_setBSSTransitionActivation<AP_INDEX> <STATE>\n"
+    printf("\n\tbssTransitionActivated <AP_INDEX> <STATE>\n"
            "\t\tSTATE - '0' disable BTM, '1' enable BTM\n");
-    printf("\n\twifi_setNeighborReportActivation <AP_INDEX> <STATE>\n"
+    printf("\n\tnbrReportActivated <AP_INDEX> <STATE>\n"
            "\t\tSTATE - '0' disable RRM, '1' enable RRM\n\n");
     exit(0);
 }
@@ -225,12 +231,13 @@ static bool serialize_cfg(const char *cfg_name, char **ptr, int *bytes_left, int
     return true;
 }
 
-static bool handle_wifi_steering_setGroup(const char *name, const char *group_index_str, const char *cfg_2_str,
-                const char *cfg_5_str, char *cmd, size_t cmd_max_size)
+static bool handle_wifi_steering_setGroup(const char *name, const char *group_index_str, char **cfg_str,
+                int cfg_str_number, char *cmd, size_t cmd_max_size)
 {
     int bytes_left = cmd_max_size - 1;
     int counter = 0;
     char *ptr = cmd;
+    int i;
 
     LOGD("group_index = %s\n", group_index_str);
 
@@ -238,8 +245,14 @@ static bool handle_wifi_steering_setGroup(const char *name, const char *group_in
     bytes_left -= counter;
     ptr += counter;
 
-    if (!serialize_cfg(cfg_2_str, &ptr, &bytes_left, &counter)) return false;
-    if (!serialize_cfg(cfg_5_str, &ptr, &bytes_left, &counter)) return false;
+    for (i = 0; i < cfg_str_number; i++)
+    {
+        if (!serialize_cfg(cfg_str[i], &ptr, &bytes_left, &counter))
+        {
+            LOGE("unable to serialize cfg %s\n", cfg_str[i]);
+            return false;
+        }
+    }
 
     return true;
 }
@@ -471,6 +484,7 @@ static bool handle_wifi_steering_clientRemove(const char *name, const char *grou
 static bool parse_cmd(int optind, char *cmd, size_t cmd_max_size, int argc, char **argv)
 {
     int parameters = argc - optind;
+    const unsigned int ap_cfg_offset = 2;
 
     LOGD("Have %d parameters to parse\n", parameters);
 
@@ -496,16 +510,15 @@ static bool parse_cmd(int optind, char *cmd, size_t cmd_max_size, int argc, char
 
     if (!strcmp(argv[optind], "wifi_steering_setGroup"))
     {
-        if (parameters != 4)
+        if (parameters < 4 || parameters > 20)
         {
             LOGE("Wrong number of parameters for wifi_steering_setGroup\n");
             print_usage();
             return false;
         }
-
         LOGI("wifi_steering_setGroup()\n");
-        return handle_wifi_steering_setGroup(argv[optind], argv[optind + 1], argv[optind + 2],
-                argv[optind + 3], cmd, cmd_max_size);
+        return handle_wifi_steering_setGroup(argv[optind], argv[optind + 1], &argv[optind + 2],
+                parameters - ap_cfg_offset, cmd, cmd_max_size);
     }
 
     if (!strcmp(argv[optind], "wifi_setBTMRequest"))
@@ -606,60 +619,60 @@ static bool parse_cmd(int optind, char *cmd, size_t cmd_max_size, int argc, char
         return true;
     }
 
-    if (!strcmp(argv[optind], "wifi_getBSSTransitionActivation"))
-    {
-        if (parameters != 1)
-        {
-            LOGE("Wrong number of parameters for wifi_getBSSTransitionActivation\n");
-            print_usage();
-            return false;
-        }
-
-        LOGI("wifi_getBSSTransitionActivation()\n");
-        snprintf(cmd, cmd_max_size, "wifi_getBSSTransitionActivation;%s", argv[optind + 1]);
-        return true;
-    }
-
-    if (!strcmp(argv[optind], "wifi_getNeighborReportActivation"))
-    {
-        if (parameters != 1)
-        {
-            LOGE("Wrong number of parameters for wifi_getNeighborReportActivation\n");
-            print_usage();
-            return false;
-        }
-
-        LOGI("wifi_getNeighborReportActivation()\n");
-        snprintf(cmd, cmd_max_size, "wifi_getNeighborReportActivation;%s", argv[optind + 1]);
-        return true;
-    }
-
-    if (!strcmp(argv[optind], "wifi_setBSSTransitionActivation"))
+    if (!strcmp(argv[optind], "get_bssTransitionActivated"))
     {
         if (parameters != 2)
         {
-            LOGE("Wrong number of parameters for wifi_setBSSTransitionActivation\n");
+            LOGE("Wrong number of parameters for get_bssTransitionActivated\n");
             print_usage();
             return false;
         }
 
-        LOGI("wifi_setBSSTransitionActivation()\n");
-        snprintf(cmd, cmd_max_size, "wifi_setBSSTransitionActivation;%s;%s", argv[optind + 1],
+        LOGI("get_bssTransitionActivated\n");
+        snprintf(cmd, cmd_max_size, "get_bssTransitionActivated;%s", argv[optind + 1]);
+        return true;
+    }
+
+    if (!strcmp(argv[optind], "get_nbrReportActivated"))
+    {
+        if (parameters != 2)
+        {
+            LOGE("Wrong number of parameters for get_nbrReportActivated\n");
+            print_usage();
+            return false;
+        }
+
+        LOGI("get_nbrReportActivated\n");
+        snprintf(cmd, cmd_max_size, "get_nbrReportActivated;%s", argv[optind + 1]);
+        return true;
+    }
+
+    if (!strcmp(argv[optind], "bssTransitionActivated"))
+    {
+        if (parameters != 3)
+        {
+            LOGE("Wrong number of parameters for bssTransitionActivated\n");
+            print_usage();
+            return false;
+        }
+
+        LOGI("bssTransitionActivated\n");
+        snprintf(cmd, cmd_max_size, "bssTransitionActivated;%s;%s", argv[optind + 1],
             argv[optind + 2]);
         return true;
     }
 
-    if (!strcmp(argv[optind], "wifi_setNeighborReportActivation"))
+    if (!strcmp(argv[optind], "nbrReportActivated"))
     {
-        if (parameters != 2)
+        if (parameters != 3)
         {
-            LOGE("Wrong number of parameters for wifi_setNeighborReportActivation\n");
+            LOGE("Wrong number of parameters for nbrReportActivated\n");
             print_usage();
             return false;
         }
 
-        LOGI("wifi_setNeighborReportActivation()\n");
-        snprintf(cmd, cmd_max_size, "wifi_setNeighborReportActivation;%s;%s", argv[optind + 1],
+        LOGI("nbrReportActivated\n");
+        snprintf(cmd, cmd_max_size, "nbrReportActivated;%s;%s", argv[optind + 1],
             argv[optind + 2]);
         return true;
     }

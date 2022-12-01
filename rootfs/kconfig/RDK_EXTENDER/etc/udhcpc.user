@@ -1,0 +1,54 @@
+#!/bin/sh
+# {# jinja-parse #}
+INSTALL_PREFIX={{INSTALL_PREFIX}}
+
+. ${INSTALL_PREFIX}/bin/dns_sub.sh
+
+dns_update()
+{
+    #
+    # Apply DNS setting
+    #
+    dns_reset "$interface"
+    for d in $dns
+    do
+        [ "$d" == "0.0.0.0" ] && continue
+        dns_add "$interface" nameserver "$d"
+    done
+
+    for d in $domain
+    do
+        dns_add "$interface" search "$d"
+    done
+
+    dns_apply "$interface"
+}
+
+logger "udhcpc.user: [$interface] args=$@"
+
+[ -n "$router" ]     && logger "udhcpc.user: gateway=$router"
+[ -n "$timesrv" ]    && logger "udhcpc.user: timesrv=$timesrv"
+[ -n "$namesrv" ]    && logger "udhcpc.user: namesrv=$namesrv"
+[ -n "$dns" ]        && logger "udhcpc.user: dns=$dns"
+[ -n "$logsrv" ]     && logger "udhcpc.user: logsrv=$logsrv"
+[ -n "$cookiesrv" ]  && logger "udhcpc.user: cookiesrv=$cookiesrv"
+[ -n "$lprsrv" ]     && logger "udhcpc.user: lprsrv=$lprsrv"
+[ -n "$hostname" ]   && logger "udhcpc.user: hostname=$hostname"
+[ -n "$domain" ]     && logger "udhcpc.user: domain=$domain"
+[ -n "$swapsrv" ]    && logger "udhcpc.user: swapsrv=$swapsrv"
+[ -n "$ntpsrv" ]     && logger "udhcpc.user: ntpsrv=$ntpsrv"
+[ -n "$lease" ]      && logger "udhcpc.user: lease=$lease"
+[ -n "$vendorspec" ] && logger "udhcpc.user: vendorspec=$vendorspec"
+
+case "$1" in
+    bound)
+        dns_update
+    ;;
+    renew)
+        dns_update
+    ;;
+    *)
+        true
+    ;;
+esac
+

@@ -11,12 +11,6 @@ config RDK_LAN_BRIDGE_NAME
     help
         LAN bridge name that will be used
 
-config RDK_WAN_BRIDGE_NAME
-    string "WAN bridge name"
-    default "br-wan"
-    help
-        WAN bridge name that will be used
-
 config RDK_HOME_AP_24_IFNAME
     string "Home AP 2.4 GHz interface name"
     default "home-ap-24"
@@ -25,13 +19,14 @@ config RDK_HOME_AP_24_IFNAME
 
 config RDK_HOME_AP_50_IFNAME
     string "Home AP 5 GHz interface name"
-    default "hom-ap-50"
+    default "home-ap-50"
     help
         Backhaul AP 5 GHz name that will be used
 
 config RDK_HOME_AP_60_IFNAME
     string "Home AP 6 GHz interface name"
-    default "hom-ap-60"
+    default "home-ap-60"
+    depends on RDK_6G_RADIO_SUPPORT
     help
         Backhaul AP 6 GHz name that will be used
 
@@ -50,6 +45,7 @@ config RDK_BHAUL_AP_50_IFNAME
 config RDK_BHAUL_AP_60_IFNAME
     string "Backhaul AP 6 GHz interface name"
     default "bhaul-ap-60"
+    depends on RDK_6G_RADIO_SUPPORT
     help
         Backhaul AP 6 GHz name that will be used
 
@@ -68,8 +64,48 @@ config RDK_ONBOARD_AP_50_IFNAME
 config RDK_ONBOARD_AP_60_IFNAME
     string "Onboard AP 6 GHz interface name"
     default "onboard-ap-60"
+    depends on RDK_6G_RADIO_SUPPORT
     help
         Onboard AP 6 GHz name that will be used
+
+config RDK_C_PORTAL_AP_24_IFNAME
+    string "Captive portal AP 2.4 GHz interface name"
+    default "cp-24"
+    help
+        Captive portal AP 2.4 GHz name that will be used. Required for
+        WorkPass
+
+config RDK_C_PORTAL_AP_50_IFNAME
+    string "Captive portal AP 5 GHz interface name"
+    default "cp-50"
+    help
+        Captive portal AP 5 GHz name that will be used. Required for WorkPass
+
+config RDK_C_PORTAL_AP_60_IFNAME
+    string "Captive AP 6 GHz interface name"
+    default "cp-60"
+    depends on RDK_6G_RADIO_SUPPORT
+    help
+        Captive portal AP 6 GHz name that will be used. Required for WorkPass
+
+config RDK_FRONTHAUL_AP_24_IFNAME
+    string "Fronthaul AP 2.4 GHz interface name"
+    default "fhaul-ap-24"
+    help
+        Fronthaul AP 2.4 GHz name that will be used. Required for WorkPass
+
+config RDK_FRONTHAUL_AP_50_IFNAME
+    string "Fronthaul AP 5 GHz interface name"
+    default "fhaul-ap-50"
+    help
+        Fronthaul AP 5 GHz name that will be used. Required for WorkPass
+
+config RDK_FRONTHAUL_AP_60_IFNAME
+    string "Fronthaul AP 6 GHz interface name"
+    default "fhaul-ap-60"
+    depends on RDK_6G_RADIO_SUPPORT
+    help
+        Fronthaul AP 6 GHz name that will be used. Required for WorkPass
 
 config RDK_6G_RADIO_SUPPORT
     bool "6G radio support"
@@ -92,6 +128,7 @@ config RDK_CHIPSET_NAME_5G
 config RDK_CHIPSET_NAME_6G
     string "6 GHz radio wifi chipset name"
     default "Chipset6G"
+    depends on RDK_6G_RADIO_SUPPORT
     help
         Human-readable Wifi chipset name of 6GHz radio
 
@@ -122,6 +159,14 @@ config RDK_HEALTHCHECK_INTERVAL
     help
         The interval at which OpenSync will read Radio and VIF
         information to keep OVSDB state tables up-to-date.
+
+config RDK_VIF_STATE_UPDATE_DELAY
+    int "VIF state update delay in seconds"
+    default "3"
+    help
+        The delay from applying Wifi_VIF_Config changes until
+        Wifi_VIF_State resynchronization. This is addressing
+        asynchronous changes in wifi setup.
 
 config RDK_HAS_ASSOC_REQ_IES
     bool "The wifi_getAssociationReqIEs is implemented"
@@ -193,6 +238,26 @@ config RDK_WIFI_HAL_VERSION_3_PHASE2
     help
         Enable wifi_hal 3.0 phase 2
 
+config RDK_CUMULATIVE_SURVEY_ONCHAN
+    int "Cumulative ONCHAN survey reporting"
+    default 1
+    help
+        Select 1 if counters returned by wifi_getRadioChannelStats()
+        HAL for on-channel (current operating channel) are
+        cumulative (monotonic). Select 0 if those counters represent
+        a one-shot measurement and subsequent calls should not assume
+        previous data to be relevant for delta calculation.
+
+config RDK_CUMULATIVE_SURVEY_OFFCHAN
+    int "Cumulative OFFCHAN survey reporting"
+    default 1
+    help
+        Select 1 if counters returned by wifi_getRadioChannelStats()
+        HAL for off-channel (current non-operating channel) are
+        cumulative (monotonic). Select - if those counters represent
+        a one-shot measurement and subsequent calls should not assume
+        previous data to be relevant for delta calculation.
+
 if MANAGER_XM
 
 config RDK_CONNECTOR_DHCP_SYNC_LAN_MANAGEMENT
@@ -205,5 +270,47 @@ config RDK_CONNECTOR_DHCP_SYNC_LAN_MANAGEMENT
 
 
 endif
+
+config RDK_DM_MODEL_NUM
+    string "Access key: Device model name"
+    default "Device.DeviceInfo.ModelName"
+    help
+        TR-181 DM parameter name providing device friendly
+        name used in the network
+
+config RDK_DM_SERIAL_NUM
+    string "Access key: Device serial number"
+    default "Device.DeviceInfo.SerialNumber"
+    help
+        TR-181 DM parameter name providing device serial
+        number as seen on the BAR code
+
+config RDK_DM_SOFTWARE_VER
+    string "Access key: Device software version"
+    default "Device.DeviceInfo.SoftwareVersion"
+    help
+        TR-181 DM parameter name providing joined platform
+        firmware version containing OpenSync
+
+config RDK_DM_CM_MAC
+    string "Access key: CM MAC address"
+    default "Device.DeviceInfo.X_RDKCENTRAL-COM_CMTS_MAC"
+    help
+        TR-181 DM parameter name providing MAC address of the base
+        network interface, also used as part of node identification
+
+config RDK_DM_MESH_STATE
+    string "Access key: Mesh state"
+    default "Device.DeviceInfo.X_RDKCENTRAL-COM_xOpsDeviceMgmt.Mesh.State"
+    help
+        TR-181 DM parameter name providing actual device
+        mode as cloud or monitor
+
+config RDK_DM_MESH_URL
+    string "Access key: Mesh URL"
+    default "Device.DeviceInfo.X_RDKCENTRAL-COM_xOpsDeviceMgmt.Mesh.URL"
+    help
+        TR-181 DM parameter name providing cloud redirector address
+        specific for different deployments (production or development)
 
 endif

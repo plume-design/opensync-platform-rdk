@@ -37,6 +37,10 @@ ifeq ($(CONFIG_RDK_WIFI_HAL_VERSION_3_PHASE2),y)
 CFLAGS += -DWIFI_HAL_VERSION_3_PHASE2
 endif
 
+# libnl3 (netlink lib) has ia separate dir
+LIBNL3_HEADERS = -I$(PKG_CONFIG_SYSROOT_DIR)/usr/include/libnl3
+export LIBNL3_HEADERS
+
 # Yocto takes care of packaging stripped and unstripped binaries on its own,
 # and generates 2 packages: with and without debug symbols.
 # Also, Yocto fills in STRIP, which we use internally for stripping,

@@ -32,6 +32,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "target.h"
 #include "target_internal.h"
+#include "memutil.h"
 
 #define MODULE_ID LOG_MODULE_ID_OSA
 
@@ -69,6 +70,136 @@ static int                  hal_cb_queue_len = 0;
 
 static struct target_radio_ops g_rops;
 
+static bool clients_update(
+        char *ifname,
+        const char *mac,
+        const char *key_id,
+        bool connected)
+{
+    struct schema_Wifi_Associated_Clients       cschema;
+
+    memset(&cschema, 0, sizeof(cschema));
+    cschema._partial_update = true;
+
+    SCHEMA_SET_STR(cschema.mac, mac);
+    SCHEMA_SET_STR(cschema.key_id, key_id);
+
+    if (connected == true)
+    {
+        SCHEMA_SET_STR(cschema.state, "active");
+    } else
+    {
+        SCHEMA_SET_STR(cschema.state, "inactive");
+    }
+
+    g_rops.op_client(&cschema, target_unmap_ifname(ifname), connected);
+
+    return true;
+}
+
+static void clients_connection(
+        INT apIndex,
+        char *mac,
+        char *key_id)
+{
+    client_t *client;
+    char     ifname[256];
+    char     ifname_old[256];
+
+    memset(ifname, 0, sizeof(ifname));
+    memset(ifname_old, 0, sizeof(ifname_old));
+    if (mac == NULL || key_id == NULL) {
+        return;
+    }
+
+    if (wifi_getApName(apIndex, ifname) != RETURN_OK)
+    {
+        LOGE("Cannot get apName for index %d\n", apIndex);
+        return;
+    }
+
+    client = ds_tree_find(&connected_clients, mac);
+    if (client == NULL)
+    {
+        LOGI("%s: New client '%s' connected", ifname, mac);
+
+        client = CALLOC(1, sizeof(*client));
+
+        STRSCPY(client->mac, mac);
+        client->apIndex = apIndex;
+        ds_tree_insert(&connected_clients, client, client->mac);
+    }
+    else if (client->apIndex != apIndex)
+    {
+        if (wifi_getApName(client->apIndex, ifname_old) != RETURN_OK)
+        {
+            LOGE("Cannot get apName for index %d\n", client->apIndex);
+            return;
+        }
+
+        LOGI("%s: Client '%s' connection moving from %s",
+             ifname, client->mac, ifname_old);
+        clients_update(ifname_old, client->mac, client->key_id, false);
+        client->apIndex = apIndex;
+    }
+    else if (strncmp(client->key_id, key_id, sizeof(client->key_id)) != 0)
+    {
+        LOGI("%s: Client '%s' key_id is changed from %s to %s",
+            ifname, client->mac, client->key_id, key_id);
+        clients_update(ifname, client->mac, client->key_id, false);
+    }
+    else
+    {
+        LOGT("%s: Client '%s' already connected", ifname, client->mac);
+        return;
+    }
+
+    STRSCPY(client->key_id, key_id);
+
+    clients_update(ifname, client->mac, client->key_id, true);
+
+    return;
+}
+
+static client_t *clients_disconnection(INT apIndex, const char *mac)
+{
+    client_t        *client;
+    char ifname[256];
+
+    memset(ifname, 0, sizeof(ifname));
+
+    if (wifi_getApName(apIndex, ifname) != RETURN_OK)
+    {
+        LOGE("%s: cannot get apName for index %d\n", __func__, apIndex);
+        return NULL;
+    }
+
+    if (mac == NULL)
+    {
+        return NULL;
+    }
+
+    client = ds_tree_find(&connected_clients, mac);
+    if (client)
+    {
+        if (client->apIndex != apIndex)
+        {
+            LOGI("%s: Client '%s' disconnect ignored (active on %d)",
+                    ifname, client->mac, client->apIndex);
+            return NULL;
+        }
+
+        LOGI("%s: Client disconnected (%s)", ifname, mac);
+        clients_update(ifname, mac, client ? client->key_id : NULL, false);
+        return client;
+    }
+
+    LOGI("%s: Client '%s; disconnect cb received, but client is not tracked, ignoring",
+            ifname, mac);
+
+    return NULL;
+}
+
 #ifdef WIFI_HAL_VERSION_3_PHASE2
 static INT clients_hal_assocdev_cb(INT ssid_index, wifi_associated_dev3_t *sta)
 #else
@@ -86,11 +217,7 @@ static INT clients_hal_assocdev_cb(INT ssid_index, wifi_associated_dev_t *sta)
         goto exit;
     }
 
-    if ((cbe = calloc(1, sizeof(*cbe))) == NULL)
-    {
-        LOGE("clients_hal_assocdev_cb: Failed to allocate memory!");
-        goto exit;
-    }
+    cbe = CALLOC(1, sizeof(*cbe));
     cbe->ssid_index = ssid_index;
     memcpy(&cbe->sta, sta, sizeof(cbe->sta));
 
@@ -135,6 +262,7 @@ static void clients_hal_async_cb(EV_P_ ev_async *w, int revents)
     os_macaddr_t        macaddr;
     char                mac[20];
     char                ifname[256];
+    client_t            *client;
 
     pthread_mutex_lock(&hal_cb_lock);
 
@@ -151,7 +279,7 @@ static void clients_hal_async_cb(EV_P_ ev_async *w, int revents)
         if (wifi_getApName(cbe->ssid_index, ifname) != RETURN_OK)
         {
             LOGE("%s: cannot get AP name for index %d", __func__, cbe->ssid_index);
-            free(cbe);
+            FREE(cbe);
             cbe = ds_dlist_inext(&qiter);
             continue;
         }
@@ -184,15 +312,59 @@ static void clients_hal_async_cb(EV_P_ ev_async *w, int revents)
         }
         else
         {
-            clients_disconnection(cbe->ssid_index, mac);
+            client = clients_disconnection(cbe->ssid_index, mac);
+            if (client)
+            {
+                ds_tree_remove(&connected_clients, client);
+                FREE(client);
+            }
+            else
+            {
+                LOGW("%s: Disconnect untracked client %s. Skipping removal", __func__, mac);
+            }
         }
 
-        free(cbe);
+        FREE(cbe);
         cbe = ds_dlist_inext(&qiter);
     }
 
     pthread_mutex_unlock(&hal_cb_lock);
     return;
+}
+
+static void detect_disconnection(unsigned int apIndex, const wifi_associated_dev3_t *associated_dev, UINT num_devices)
+{
+    client_t *client;
+    char mac[WIFIHAL_MAX_MACSTR];
+    unsigned int i;
+    os_macaddr_t macaddr;
+    ds_tree_iter_t iter;
+
+    ds_tree_foreach_iter(&connected_clients, client, &iter)
+    {
+        if (client->apIndex != (int)apIndex) continue;
+        for (i = 0; i < num_devices; i++)
+        {
+            memcpy(&macaddr, associated_dev[i].cli_MACAddress, sizeof(macaddr));
+            if (snprintf(mac, sizeof(mac),
+                PRI(os_macaddr_lower_t), FMT(os_macaddr_t, macaddr)) != WIFIHAL_MAX_MACSTR - 1)
+            {
+                LOGE("%s failed to convert MAC to string", __func__);
+                continue;
+            }
+            if (strcmp(client->mac, mac) == 0) break;
+        }
+
+        if (i == num_devices)
+        {
+            LOGI("Client %s not found: report disconnection", client->mac);
+            if (clients_disconnection(apIndex, client->mac) != NULL)
+            {
+                ds_tree_iremove(&iter);
+                FREE(client);
+            }
+        }
+    }
 }
 
 bool clients_hal_fetch_existing(unsigned int apIndex)
@@ -254,6 +426,10 @@ bool clients_hal_fetch_existing(unsigned int apIndex)
         clients_connection(apIndex, mac, cached_key_ids[apIndex]);
 #endif
     }
+
+    LOGI("Checking for stale clients");
+    detect_disconnection(apIndex, associated_dev, num_devices);
+
     free(associated_dev);
 
     return true;
@@ -301,137 +477,3 @@ bool clients_hal_init(const struct target_radio_ops *rops)
 
     return true;
 }
-
-static bool clients_update(
-        char *ifname,
-        const char *mac,
-        const char *key_id,
-        bool connected)
-{
-    struct schema_Wifi_Associated_Clients       cschema;
-
-    memset(&cschema, 0, sizeof(cschema));
-    cschema._partial_update = true;
-
-    SCHEMA_SET_STR(cschema.mac, mac);
-    SCHEMA_SET_STR(cschema.key_id, key_id);
-
-    if (connected == true)
-    {
-        SCHEMA_SET_STR(cschema.state, "active");
-    } else
-    {
-        SCHEMA_SET_STR(cschema.state, "inactive");
-    }
-
-    g_rops.op_client(&cschema, target_unmap_ifname(ifname), connected);
-
-    return true;
-}
-
-
-/*****************************************************************************/
-
-void clients_connection(
-        INT apIndex,
-        char *mac,
-        char *key_id)
-{
-    client_t *client;
-    char     ifname[256];
-    char     ifname_old[256];
-
-    memset(ifname, 0, sizeof(ifname));
-    memset(ifname_old, 0, sizeof(ifname_old));
-    if (mac == NULL) {
-        return;
-    }
-
-    if (wifi_getApName(apIndex, ifname) != RETURN_OK)
-    {
-        LOGE("Cannot get apName for index %d\n", apIndex);
-        return;
-    }
-
-    client = ds_tree_find(&connected_clients, mac);
-    if (client == NULL)
-    {
-        LOGI("%s: New client '%s' connected", ifname, mac);
-
-        if (!(client = calloc(1, sizeof(*client)))) {
-            LOGE("%s: Failed to allocate memory for new client", ifname);
-            return;
-        }
-
-        STRSCPY(client->mac, mac);
-        client->apIndex = apIndex;
-        ds_tree_insert(&connected_clients, client, client->mac);
-    }
-    else if (client->apIndex != apIndex)
-    {
-        if (wifi_getApName(client->apIndex, ifname_old) != RETURN_OK)
-        {
-            LOGE("Cannot get apName for index %d\n", client->apIndex);
-            return;
-        }
-
-        LOGI("%s: Client '%s' connection moving from %s",
-             ifname, client->mac, ifname_old);
-        clients_update(ifname_old, client->mac, client->key_id, false);
-        client->apIndex = apIndex;
-    }
-    else
-    {
-        LOGT("%s: Client '%s' already connected", ifname, client->mac);
-        return;
-    }
-
-    STRSCPY(client->key_id, key_id);
-
-    clients_update(ifname, client->mac, client->key_id, true);
-
-    return;
-}
-
-void clients_disconnection(INT apIndex, char *mac)
-{
-    client_t        *client;
-    char ifname[256];
-
-    memset(ifname, 0, sizeof(ifname));
-
-    if (wifi_getApName(apIndex, ifname) != RETURN_OK)
-    {
-        LOGE("%s: cannot get apName for index %d\n", __func__, apIndex);
-        return;
-    }
-
-    if (mac == NULL)
-    {
-        return;
-    }
-
-    client = ds_tree_find(&connected_clients, mac);
-    if (client)
-    {
-        if (client->apIndex != apIndex)
-        {
-            LOGI("%s: Client '%s' disconnect ignored (active on %d)",
-                    ifname, client->mac, client->apIndex);
-            return;
-        }
-
-        LOGI("%s: Client disconnected (%s)", ifname, mac);
-        clients_update(ifname, mac, client ? client->key_id : NULL, false);
-        ds_tree_remove(&connected_clients, client);
-        free(client);
-        return;
-    }
-
-    LOGI("%s: Client '%s; disconnect cb received, but client is not tracked, ignoring",
-            ifname, mac);
-
-    return;
-}
-
-

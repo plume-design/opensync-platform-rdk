@@ -24,17 +24,10 @@
 
 ##############################################################################
 #
-# wifi_hal_test
+# OVS MAC Learn layer library
 #
 ##############################################################################
 
-UNIT_NAME := wifi_hal_test
+UNIT_CFLAGS += -DTARGET_H=\"target_RDKB.h\"
 
-UNIT_DISABLE := n
-
-UNIT_DIR := tools
-
-UNIT_TYPE := BIN
-
-UNIT_CFLAGS := -I$(VENDOR_DIR)/src/lib/target/inc
-UNIT_SRC := wifi_hal_test.c
+UNIT_EXPORT_CFLAGS := $(UNIT_CFLAGS)

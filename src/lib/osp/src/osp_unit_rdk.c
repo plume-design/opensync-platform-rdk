@@ -32,7 +32,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <errno.h>
 
 #include "log.h"
-#include "devinfo.h"
+#include "dmcli.h"
 #include "const.h"
 #include "build_version.h"
 
@@ -63,8 +63,8 @@ bool osp_unit_serial_get(char *buff, size_t buffsz)
 {
     if (!osp_unit_cache.serial_cached)
     {
-        if (!devinfo_getv(DEVINFO_SERIAL_NUM,
-                          ARRAY_AND_SIZE(osp_unit_cache.serial)))
+        if (!dmcli_eRT_getv(DMCLI_ERT_SERIAL_NUM,
+                          ARRAY_AND_SIZE(osp_unit_cache.serial), false))
         {
             return false;
         }
@@ -79,8 +79,8 @@ bool osp_unit_id_get(char *buff, size_t buffsz)
 {
     if (!osp_unit_cache.id_cached)
     {
-        if (!devinfo_getv(DEVINFO_CM_MAC,
-                          ARRAY_AND_SIZE(osp_unit_cache.id)))
+        if (!dmcli_eRT_getv(DMCLI_ERT_CM_MAC,
+                          ARRAY_AND_SIZE(osp_unit_cache.id), false))
         {
             return false;
         }
@@ -128,8 +128,8 @@ bool osp_unit_model_get(char *buff, size_t buffsz)
 {
     if (!osp_unit_cache.model_cached)
     {
-        if (!devinfo_getv(DEVINFO_MODEL_NUM,
-                          ARRAY_AND_SIZE(osp_unit_cache.model)))
+        if (!dmcli_eRT_getv(DMCLI_ERT_MODEL_NUM,
+                          ARRAY_AND_SIZE(osp_unit_cache.model), false))
         {
             return false;
         }
@@ -156,8 +156,8 @@ bool osp_unit_platform_version_get(char *buff, size_t buffsz)
 {
     if (!osp_unit_cache.pver_cached)
     {
-        if (!devinfo_getv(DEVINFO_SOFTWARE_VER,
-                          ARRAY_AND_SIZE(osp_unit_cache.pver)))
+        if (!dmcli_eRT_getv(DMCLI_ERT_SOFTWARE_VER,
+                          ARRAY_AND_SIZE(osp_unit_cache.pver), false))
         {
             return false;
         }
@@ -184,6 +184,11 @@ bool osp_unit_factory_get(char *buff, size_t buffsz)
 }
 
 bool osp_unit_mfg_date_get(char *buff, size_t buffsz)
+{
+    return false;
+}
+
+bool osp_unit_ovs_version_get(char *buff, size_t buffsz)
 {
     return false;
 }

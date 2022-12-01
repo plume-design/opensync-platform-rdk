@@ -37,6 +37,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target.h"
 #include "target_internal.h"
 #include "os_nif.h"
+#include "memutil.h"
 
 #ifndef __WIFI_HAL_H__
 #include <ccsp/wifi_hal.h>
@@ -378,7 +379,13 @@ psk_key_id_t *cached_key_ids;
 
 bool target_radio_config_need_reset()
 {
-    return true;
+#ifdef CONFIG_RDK_EXTENDER
+    bool need_reset = false;
+#else
+    bool need_reset = true;
+#endif
+    LOGI("Check target_radio_config_need_reset=%d", need_reset);
+    return need_reset;
 }
 
 static void healthcheck_task(struct ev_loop *loop, ev_timer *watcher, int revents)
@@ -400,15 +407,20 @@ static bool radio_change_channel(
     int                 ch_width = 0;
     char                radio_ifname[128];
 
-    LOGD("Switch to channel %d triggered", channel);
+    LOGD("%s: Switch to channel %d triggered", __func__, channel);
 
     memset(radio_ifname, 0, sizeof(radio_ifname));
     ret = wifi_getRadioIfName(radioIndex, radio_ifname);
     if (ret != RETURN_OK)
     {
-        LOGE("%s: cannot get radio ifname for idx %d", __func__,
-                radioIndex);
+        LOGE("%s: Cannot get radio ifname for idx %d", __func__, radioIndex);
         return false;
+    }
+
+    if (channel == 0)
+    {
+        LOGW("%s: No channel configured, cannot change channel!", radio_ifname);
+        return true;
     }
 
     if (ht_mode == NULL)
@@ -452,19 +464,45 @@ static bool radio_change_channel(
     return true;
 }
 
+INT get_radio_cap_index(const wifi_hal_capability_t *cap, INT radioIndex)
+{
+    if ((UINT)radioIndex < cap->wifi_prop.numRadios)
+    {
+        for (UINT i = 0; i < cap->wifi_prop.numRadios; i++)
+        {
+            if ((UINT)radioIndex == cap->wifi_prop.radiocap[i].index)
+                return (INT)i;
+        }
+    }
+    return -1;
+}
+
 static bool radio_change_zero_wait_dfs(INT radioIndex, const struct schema_Wifi_Radio_Config *rconf)
 {
     INT     ret;
     BOOL    zero_dfs_supported = false;
     BOOL    enable = false;
     BOOL    precac = false;
+    wifi_hal_capability_t cap;
+    INT capIndex;
 
-    ret = wifi_isZeroDFSSupported(radioIndex, &zero_dfs_supported);
+    memset(&cap, 0, sizeof(cap));
+
+    ret = wifi_getHalCapability(&cap);
     if (ret != RETURN_OK)
     {
-        LOGW("%s: cannot get isZeroDFSSupported for idx %d", __func__, radioIndex);
+        LOGE("%s: failed to get HAL capabilities", __func__);
         return false;
     }
+    capIndex = get_radio_cap_index(&cap, radioIndex);
+    if (capIndex < 0)
+    {
+        LOGW("%s: unable to locate capabilities for radioIndex=%d", __func__, radioIndex);
+        return false;
+    }
+
+    zero_dfs_supported = cap.wifi_prop.radiocap[capIndex].zeroDFSSupported;
+
     if (!zero_dfs_supported)
     {
         LOGE("%s, zero dfs is not supported for idx %d", __func__, radioIndex);
@@ -518,8 +556,8 @@ static bool update_channels_map(
         INT radioIndex)
 {
     int i;
-    int j = 0;
     int ret;
+    char ch_number[32];
 
     /* The number of allowed 5GHz channels are around 55. Hence
      * setting MAP_SIZE to 64 to accommodate all.
@@ -536,6 +574,7 @@ static bool update_channels_map(
         return false;
     }
 
+    rstate->channels_len = 0;
     for (i = 0; i < MAP_SIZE; i++)
     {
         if (channel_map[i].ch_number == 0)
@@ -546,44 +585,47 @@ static bool update_channels_map(
 
         LOGT("Adding channel %d state %d to channel map\n", channel_map[i].ch_number,
              channel_map[i].ch_state);
-        snprintf(rstate->channels_keys[j], sizeof(rstate->channels_keys[j]),
-                 "%d", channel_map[i].ch_number);
-        STRSCPY_WARN(rstate->channels[j], channel_state_to_state_str(channel_map[i].ch_state));
-        j++;
+        snprintf(ch_number, sizeof(ch_number), "%d", channel_map[i].ch_number);
+        SCHEMA_KEY_VAL_APPEND(rstate->channels, ch_number,
+                              channel_state_to_state_str(channel_map[i].ch_state));
     }
-
-    rstate->channels_len = j;
 
     return true;
 }
 
 static void update_radar_info(struct schema_Wifi_Radio_State *rstate)
 {
-    STRSCPY_WARN(rstate->radar_keys[0], "last_channel");
-    STRSCPY_WARN(rstate->radar[0], strlen(dfs_last_channel) > 0 ? dfs_last_channel : "0");
+    char timestamp[32];
 
-    STRSCPY_WARN(rstate->radar_keys[1], "num_detected");
-    if (strlen(dfs_num_detected) > 0) STRSCPY_WARN(rstate->radar[1], dfs_num_detected);
+    rstate->radar_len = 0;
 
-    STRSCPY_WARN(rstate->radar_keys[2], "time");
-    snprintf(rstate->radar[2], sizeof(rstate->radar[2]), "%u", dfs_radar_timestamp);
+    SCHEMA_KEY_VAL_APPEND(rstate->radar, "last_channel",
+                          strlen(dfs_last_channel) > 0 ? dfs_last_channel : "0");
 
-    rstate->radar_len = 3;
+    SCHEMA_KEY_VAL_APPEND(rstate->radar, "num_detected",
+                          strlen(dfs_num_detected) > 0 ? dfs_num_detected : "");
+
+    snprintf(timestamp, sizeof(timestamp), "%u", dfs_radar_timestamp);
+    SCHEMA_KEY_VAL_APPEND(rstate->radar, "time", timestamp);
 }
 
-static void update_zero_wait_dfs(INT radioIndex, struct schema_Wifi_Radio_State *rstate)
+static void update_zero_wait_dfs(INT radioIndex, struct schema_Wifi_Radio_State *rstate,
+        wifi_hal_capability_t *cap)
 {
     INT     ret;
     BOOL    zero_dfs_supported = false;
     BOOL    enable;
     BOOL    precac;
+    INT     capIndex;
 
-    ret = wifi_isZeroDFSSupported(radioIndex, &zero_dfs_supported);
-    if (ret != RETURN_OK)
+    capIndex = get_radio_cap_index(cap, radioIndex);
+    if (capIndex < 0)
     {
-        LOGW("%s: cannot get isZeroDFSSupported for idx %d", __func__, radioIndex);
+        LOGW("%s: unable to locate capabilities for radioIndex=%d", __func__, radioIndex);
         return;
     }
+    zero_dfs_supported = cap->wifi_prop.radiocap[capIndex].zeroDFSSupported;
+
     if (!zero_dfs_supported)
     {
         LOGI("%s, zero dfs is not supported for idx %d", __func__, radioIndex);
@@ -598,24 +640,25 @@ static void update_zero_wait_dfs(INT radioIndex, struct schema_Wifi_Radio_State 
     }
     if (enable && precac)
     {
-        STRSCPY(rstate->zero_wait_dfs, "precac");
+        SCHEMA_SET_STR(rstate->zero_wait_dfs, "precac");
     }
     else if (enable)
     {
-        STRSCPY(rstate->zero_wait_dfs, "enable");
+        SCHEMA_SET_STR(rstate->zero_wait_dfs, "enable");
     }
     else
     {
-        STRSCPY(rstate->zero_wait_dfs, "disable");
+        SCHEMA_SET_STR(rstate->zero_wait_dfs, "disable");
     }
-    rstate->zero_wait_dfs_exists = true;
 }
 
 static char *radio_get_hw_type(const char *band)
 {
     if (!strcmp(band, "2.4G")) return CONFIG_RDK_CHIPSET_NAME_2G;
     if (!strcmp(band, "5G")) return CONFIG_RDK_CHIPSET_NAME_5G;
+#ifdef CONFIG_RDK_6G_RADIO_SUPPORT
     if (!strcmp(band, "6G")) return CONFIG_RDK_CHIPSET_NAME_6G;
+#endif
 
     return NULL;
 }
@@ -625,24 +668,28 @@ static bool radio_state_get(
         struct schema_Wifi_Radio_State *rstate)
 {
     os_macaddr_t                        macaddr;
-    CHAR                                pchannels[256];
-    char                                *p;
-    int                                 chan;
     int                                 ret;
-    int                                 i;
     char                                radio_ifname[128];
     char                                *str = NULL;
     ULONG                               lval;
     wifi_radio_operationParam_t         radio_params;
     wifi_ieee80211Variant_t             max_variant = WIFI_80211_VARIANT_A;
+    unsigned int i;
+    int j;
+    wifi_hal_capability_t cap;
+    int capIndex;
+
+    memset(&cap, 0, sizeof(cap));
+
+    ret = wifi_getHalCapability(&cap);
+    if (ret != RETURN_OK)
+    {
+        LOGE("%s: failed to get HAL capabilities", __func__);
+        return false;
+    }
 
     memset(rstate, 0, sizeof(*rstate));
-    schema_Wifi_Radio_State_mark_all_present(rstate);
     rstate->_partial_update = true;
-    rstate->channel_sync_present = false;
-    rstate->channel_mode_present = false;
-    rstate->radio_config_present = false;
-    rstate->vif_states_present = false;
 
     memset(radio_ifname, 0, sizeof(radio_ifname));
     ret = wifi_getRadioIfName(radioIndex, radio_ifname);
@@ -654,8 +701,7 @@ static bool radio_state_get(
 
     // TODO: use SCHEMA_SET_STR etc. (?)
     // if_name (w/ exists)
-    STRSCPY(rstate->if_name, target_unmap_ifname((char *)radio_ifname));
-    rstate->if_name_exists = true;
+    SCHEMA_SET_STR(rstate->if_name, target_unmap_ifname((char *)radio_ifname));
 
     memset(&radio_params, 0, sizeof(radio_params));
     ret = wifi_getRadioOperatingParameters(radioIndex, &radio_params);
@@ -669,31 +715,35 @@ static bool radio_state_get(
     str = c_get_str_by_key(map_band_str, radio_params.band);
     if (strlen(str) == 0)
     {
-        LOGW("%s: Failed to decode band string: code=%d", radio_ifname, (int)radio_params.band);
+        LOGW("%s: Failed to decode band string for %s code=%d", __func__, radio_ifname, (int)radio_params.band);
     }
     else
     {
-        STRSCPY(rstate->freq_band, str);
+        SCHEMA_SET_STR(rstate->freq_band, str);
     }
 
     // hw_type (w/ exists)
     str = radio_get_hw_type(rstate->freq_band);
     if (!str)
     {
-        LOGW("%s: Failed to get wifi chipset type", radio_ifname);
+        LOGW("%s: Failed to get wifi chipset type for %s", __func__, radio_ifname);
     }
     else
     {
-        STRSCPY(rstate->hw_type, str);
-        rstate->hw_type_exists = true;
+        SCHEMA_SET_STR(rstate->hw_type, str);
     }
 
     // enabled (w/ exists)
-    rstate->enabled = radio_params.enable;
-    rstate->enabled_exists = true;
+    SCHEMA_SET_BOOL(rstate->enabled, radio_params.enable);
 
-    rstate->channel = radio_params.channel;
-    rstate->channel_exists = true;
+    if (radio_params.channel == 0)
+    {
+        LOGW("%s: Failed to get channel for %s", __func__, radio_ifname);
+    }
+    else
+    {
+        SCHEMA_SET_INT(rstate->channel, radio_params.channel);
+    }
 
     // tx_power (w/ exists)
     // HAL 3.0: we need to use old API because 'operating params'
@@ -707,35 +757,32 @@ static bool radio_state_get(
         } else if (lval < 1) {
             lval = 1;
         }
-        rstate->tx_power = lval;
-        rstate->tx_power_exists = true;
+        SCHEMA_SET_INT(rstate->tx_power, lval);
     } else
     {
-        LOGW("Cannot read tx power for radio index %d", radioIndex);
+        LOGW("%s: Cannot read tx power for %s", __func__, radio_ifname);
     }
 
     // country (w/ exists)
     str = c_get_str_by_key(map_country_str, radio_params.countryCode);
     if (strlen(str) == 0)
     {
-        LOGW("%s: Failed to decode country: code=%d", radio_ifname, (int)radio_params.countryCode);
+        LOGW("%s: Failed to decode country for %s code=%d", __func__, radio_ifname, (int)radio_params.countryCode);
     }
     else
     {
-        STRSCPY(rstate->country, str);
-        rstate->country_exists = true;
+        SCHEMA_SET_STR(rstate->country, str);
     }
 
     str = c_get_str_by_key(map_htmode_str, radio_params.channelWidth);
     if (strlen(str) == 0)
     {
-        LOGW("%s: Failed to decode ht mode: code=%d", radio_ifname, (int)radio_params.channelWidth);
+        LOGW("%s: Failed to decode ht mode for %s code=%d", __func__, radio_ifname, (int)radio_params.channelWidth);
     }
     else
     {
         // ht_mode (w/ exists)
-        STRSCPY(rstate->ht_mode, str);
-        rstate->ht_mode_exists = true;
+        SCHEMA_SET_STR(rstate->ht_mode, str);
     }
 
     if (radio_params.variant & WIFI_80211_VARIANT_AX) max_variant = WIFI_80211_VARIANT_AX;
@@ -750,56 +797,52 @@ static bool radio_state_get(
     str = c_get_str_by_key(map_variant_str, max_variant);
     if (strlen(str) == 0)
     {
-        LOGW("%s: Failed to decode hw mode: code=%d", radio_ifname, (int)radio_params.variant);
+        LOGW("%s: Failed to decode hw mode for %s code=%d", __func__, radio_ifname, (int)radio_params.variant);
     }
     else
     {
         // hw_mode (w/ exists)
-        STRSCPY(rstate->hw_mode, str);
-        rstate->hw_mode_exists = true;
+        SCHEMA_SET_STR(rstate->hw_mode, str);
     }
 
     // Update DFS data
     if (!update_channels_map(rstate, radioIndex))
     {
-        LOGW("Cannot update channels map");
+        LOGW("%s: Cannot update channels map for %s", __func__, radio_ifname);
     }
 
     update_radar_info(rstate);
 
     if (os_nif_macaddr((char *)radio_ifname, &macaddr))
     {
-        dpp_mac_to_str(macaddr.addr, rstate->mac);
-        rstate->mac_exists = true;
+        mac_address_str_t str;
+        dpp_mac_to_str(macaddr.addr, str);
+        SCHEMA_SET_STR(rstate->mac, str);
     }
 
     // Possible Channels
-    ret = wifi_getRadioPossibleChannels(radioIndex, pchannels);
-    if (ret == RETURN_OK)
-    {
-        strcat(pchannels, ",");
-        i = 0;
-        p = strtok(pchannels, ",");
-        while (p)
-        {
-            chan = atoi(p);
-            if (chan >= 1)
-            {
-                rstate->allowed_channels[i++] = chan;
-            }
+    rstate->allowed_channels_len = 0;
 
-            p = strtok(NULL, ",");
-        }
-        rstate->allowed_channels_len = i;
+    capIndex = get_radio_cap_index(&cap, radioIndex);
+    if (capIndex < 0)
+    {
+        LOGW("%s: unable to locate capabilities for radioIndex=%d", __func__, radioIndex);
     }
     else
     {
-        LOGW("%s: Failed to get possible channels", radio_ifname);
+        for (i = 0; i < cap.wifi_prop.radiocap[capIndex].numSupportedFreqBand; i++)
+        {
+            for (j = 0; j < cap.wifi_prop.radiocap[capIndex].channel_list[i].num_channels; j++)
+            {
+                SCHEMA_VAL_APPEND_INT(rstate->allowed_channels,
+                        cap.wifi_prop.radiocap[capIndex].channel_list[i].channels_list[j]);
+            }
+        }
+
+        update_zero_wait_dfs(radioIndex, rstate, &cap);
     }
 
-    update_zero_wait_dfs(radioIndex, rstate);
-
-    LOGN("Get radio state completed for radio index %d", radioIndex);
+    LOGN("%s: Get radio state completed for %s", __func__, radio_ifname);
     return true;
 }
 
@@ -842,7 +885,7 @@ static void chan_event_async_cb(EV_P_ ev_async *w, int revents)
         number_of_events += 1;
 
         LOGT("Free DFS chan cb event");
-        free(ptr);
+        FREE(ptr);
         ptr = ds_dlist_inext(&qiter);
     }
     pthread_mutex_unlock(&hal_cb_lock);
@@ -903,12 +946,7 @@ static void chan_event_cb(
     }
 
     LOGT("Allocate DFS cb event");
-    if ((cbe = calloc(1, sizeof(*cbe))) == NULL)
-    {
-        LOGE("chan_event_cb: Failed to allocate memory!");
-        goto exit;
-    }
-
+    cbe = CALLOC(1, sizeof(*cbe));
     cbe->radioIndex = radioIndex;
     cbe->event = event;
     cbe->channel = channel;
@@ -971,15 +1009,24 @@ bool vap_controlled(const char *ifname)
     return true;
 #endif
 
-    if (!strcmp(ifname, CONFIG_RDK_HOME_AP_24_IFNAME) ||
-        !strcmp(ifname, CONFIG_RDK_HOME_AP_50_IFNAME) ||
-        !strcmp(ifname, CONFIG_RDK_HOME_AP_60_IFNAME) ||
-        !strcmp(ifname, CONFIG_RDK_BHAUL_AP_24_IFNAME) ||
-        !strcmp(ifname, CONFIG_RDK_BHAUL_AP_50_IFNAME) ||
-        !strcmp(ifname, CONFIG_RDK_BHAUL_AP_60_IFNAME) ||
-        !strcmp(ifname, CONFIG_RDK_ONBOARD_AP_24_IFNAME) ||
-        !strcmp(ifname, CONFIG_RDK_ONBOARD_AP_50_IFNAME) ||
-        !strcmp(ifname, CONFIG_RDK_ONBOARD_AP_60_IFNAME))
+    if (!strcmp(ifname, CONFIG_RDK_HOME_AP_24_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_HOME_AP_50_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_BHAUL_AP_24_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_BHAUL_AP_50_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_ONBOARD_AP_24_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_ONBOARD_AP_50_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_C_PORTAL_AP_24_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_C_PORTAL_AP_50_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_FRONTHAUL_AP_24_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_FRONTHAUL_AP_50_IFNAME)
+#ifdef CONFIG_RDK_6G_RADIO_SUPPORT
+        || !strcmp(ifname, CONFIG_RDK_HOME_AP_60_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_BHAUL_AP_60_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_ONBOARD_AP_60_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_C_PORTAL_AP_60_IFNAME)
+        || !strcmp(ifname, CONFIG_RDK_FRONTHAUL_AP_60_IFNAME)
+#endif
+        )
         {
             return true;
         }
@@ -989,89 +1036,74 @@ bool vap_controlled(const char *ifname)
 
 bool target_radio_config_init2()
 {
+    ULONG i;
+    ULONG j;
+    UINT rnum;
     INT ret;
-    ULONG r;
-    ULONG rnum;
-    ULONG s;
-    ULONG snum;
-    INT ssid_radio_idx;
-    char ssid_ifname[128];
+    wifi_vap_info_map_t vap_info_map;
+    wifi_hal_capability_t cap;
 
     struct schema_Wifi_VIF_Config   vconfig;
     struct schema_Wifi_VIF_State    vstate;
     struct schema_Wifi_Radio_Config rconfig;
     struct schema_Wifi_Radio_State  rstate;
 
-    ret = wifi_getRadioNumberOfEntries(&rnum);
+    LOGI("Enter %s", __func__);
+
+    memset(&cap, 0, sizeof(cap));
+
+    ret = wifi_getHalCapability(&cap);
     if (ret != RETURN_OK)
     {
-        LOGE("%s: failed to get radio count", __func__);
-        return false;
-    }
-    ret = wifi_getSSIDNumberOfEntries(&snum);
-    if (ret != RETURN_OK)
-    {
-        LOGE("%s: failed to get radio count", __func__);
+        LOGE("%s: failed to get HAL capabilities", __func__);
         return false;
     }
 
-    if (snum == 0)
-    {
-        LOGE("%s: no SSIDs detected", __func__);
-        return false;
-    }
+    rnum = cap.wifi_prop.numRadios;
 
-    cached_key_ids = CALLOC(snum, sizeof(psk_key_id_t));
-    for (s = 0; s < snum; s++)
-        STRSCPY(cached_key_ids[s], "key");
-
-    for (r = 0; r < rnum; r++)
+    for (i = 0; i < rnum; i++)
     {
-        radio_state_get(r, &rstate);
-        radio_copy_config_from_state(r, &rstate, &rconfig);
+        radio_state_get(i, &rstate);
+        radio_copy_config_from_state(i, &rstate, &rconfig);
         g_rops.op_rconf(&rconfig);
         g_rops.op_rstate(&rstate);
 
-        for (s = 0; s < snum; s++)
+        memset(&vap_info_map, 0, sizeof(wifi_vap_info_map_t));
+
+        if (wifi_getRadioVapInfoMap(i, &vap_info_map) != RETURN_OK)
         {
-            memset(ssid_ifname, 0, sizeof(ssid_ifname));
-            ret = wifi_getApName(s, ssid_ifname);
-            if (ret != RETURN_OK)
-            {
-                LOGW("%s: failed to get AP name for index %lu. Skipping.\n", __func__, s);
-                continue;
-            }
+            LOGE("%s: cannot get vap info map for radio index = %lu", __func__, i);
+            return false;
+        }
 
-            ret = wifi_getSSIDRadioIndex(s, &ssid_radio_idx);
-            if (ret != RETURN_OK)
+        for (j = 0; j < vap_info_map.num_vaps; j++)
+        {
+            if (vap_info_map.vap_array[j].vap_mode != wifi_vap_mode_ap)
             {
-                LOGW("Cannot get radio index for SSID %lu", s);
-                continue;
-            }
-
-            if ((ULONG)ssid_radio_idx != r)
-            {
+                LOGI("%s: vap mode is not ap, skipping", __func__);
                 continue;
             }
 
             // Silentely skip VAPs that are not controlled by OpenSync
-            if (!vap_controlled(ssid_ifname)) continue;
+            if (!vap_controlled(vap_info_map.vap_array[j].vap_name)) continue;
 
-            LOGI("Found SSID index %lu: %s", s, ssid_ifname);
-            if (!vif_state_get(s, &vstate))
+            LOGI("Found SSID index %u: %s", vap_info_map.vap_array[j].vap_index,
+                    vap_info_map.vap_array[j].vap_name);
+            if (!vif_state_get(vap_info_map.vap_array[j].vap_index, &vstate))
             {
-                LOGE("%s: cannot get vif state for SSID index %lu", __func__, s);
+                LOGE("%s: cannot get vif state for SSID index %u", __func__, vap_info_map.vap_array[j].vap_index);
                 continue;
             }
-            if (!vif_copy_to_config(s, &vstate, &vconfig))
+
+            if (!vif_copy_to_config(j, &vstate, &vconfig))
             {
-                LOGE("%s: cannot copy VIF state to config for SSID index %lu", __func__, s);
+                LOGE("%s: cannot copy VIF state to config for SSID index %u", __func__, vap_info_map.vap_array[j].vap_index);
                 continue;
             }
+
             g_rops.op_vconf(&vconfig, rconfig.if_name);
             g_rops.op_vstate(&vstate, rstate.if_name);
         }
-
     }
 
     if (!dfs_event_cb_registered)
@@ -1105,18 +1137,21 @@ bool target_radio_config_init2()
 bool radio_ifname_to_idx(const char *ifname, INT *outRadioIndex)
 {
     INT ret;
-    ULONG r, rnum;
+    ULONG r;
     INT radio_index = -1;
     char radio_ifname[128];
+    wifi_hal_capability_t cap;
 
-    ret = wifi_getRadioNumberOfEntries(&rnum);
+    memset(&cap, 0, sizeof(cap));
+
+    ret = wifi_getHalCapability(&cap);
     if (ret != RETURN_OK)
     {
-        LOGE("%s: failed to get radio count", __func__);
+        LOGE("%s: failed to get HAL capabilities", __func__);
         return false;
     }
 
-    for (r = 0; r < rnum; r++)
+    for (r = 0; r < cap.wifi_prop.numRadios; r++)
     {
         memset(radio_ifname, 0, sizeof(radio_ifname));
         ret = wifi_getRadioIfName(r, radio_ifname);
@@ -1149,9 +1184,9 @@ bool target_radio_config_set2(
 {
     int radioIndex;
 
+    LOGD("%s: set radio configuration", __func__);
     if (!radio_ifname_to_idx(rconf->if_name, &radioIndex))
     {
-        LOGE("%s: cannot get radio index for %s", __func__, rconf->if_name);
         return false;
     }
 
@@ -1159,7 +1194,6 @@ bool target_radio_config_set2(
     {
         if (!radio_change_channel(radioIndex, rconf->channel, rconf->ht_mode))
         {
-            LOGE("%s: cannot change radio channel for %s", __func__, rconf->if_name);
             return false;
         }
     }
@@ -1168,7 +1202,6 @@ bool target_radio_config_set2(
     {
         if (!radio_change_zero_wait_dfs(radioIndex, rconf))
         {
-            LOGE("%s: cannot change radio zero wait dfs for %s", __func__, rconf->if_name);
             return false;
         }
     }
@@ -1179,78 +1212,63 @@ bool target_radio_config_set2(
 
 static void radio_resync_all_task(struct ev_loop *loop, ev_timer *watcher, int revents)
 {
+    ULONG i;
+    ULONG j;
     INT ret;
-    ULONG r, rnum;
-    ULONG s, snum;
-    char ssid_ifname[128];
-    BOOL enabled = false;
+    wifi_vap_info_map_t vap_info_map;
+    wifi_vap_index_t vap_index;
+    wifi_hal_capability_t cap;
+
+    memset(&cap, 0, sizeof(cap));
 
     LOGT("Re-sync started");
 
-    ret = wifi_getRadioNumberOfEntries(&rnum);
+    ret = wifi_getHalCapability(&cap);
     if (ret != RETURN_OK)
     {
-        LOGE("%s: failed to get radio count", __func__);
+        LOGE("%s: failed to get HAL capabilities", __func__);
         goto out;
     }
 
-    for (r = 0; r < rnum; r++)
+    for (i = 0; i < cap.wifi_prop.numRadios; i++)
     {
-        if (!radio_state_update(r))
+        if (!radio_state_update(i))
         {
-            LOGW("Cannot update radio state for radio index %lu", r);
-            continue;
-        }
-    }
-
-    ret = wifi_getSSIDNumberOfEntries(&snum);
-    if (ret != RETURN_OK)
-    {
-        LOGE("%s: failed to get SSID count", __func__);
-        goto out;
-    }
-
-    if (snum == 0)
-    {
-        LOGE("%s: no SSIDs detected", __func__);
-        goto out;
-    }
-
-    for (s = 0; s < snum; s++)
-    {
-        ret = wifi_getSSIDEnable(s, &enabled);
-        if (ret != RETURN_OK)
-        {
-            LOGW("%s: failed to get SSID enabled state for index %lu. Skipping", __func__, s);
+            LOGW("Cannot update radio state for radio index %lu", i);
             continue;
         }
 
-        // Silently skip ifaces that are not enabled
-        if (enabled == false) continue;
+        memset(&vap_info_map, 0, sizeof(wifi_vap_info_map_t));
 
-        memset(ssid_ifname, 0, sizeof(ssid_ifname));
-        ret = wifi_getApName(s, ssid_ifname);
-        if (ret != RETURN_OK)
+        if (wifi_getRadioVapInfoMap(i, &vap_info_map) != RETURN_OK)
         {
-            LOGW("%s: failed to get AP name for index %lu. Skipping.\n", __func__, s);
-            continue;
+            LOGE("%s: cannot get vap info map for radio index = %lu", __func__, i);
+            goto out;
         }
 
-        // Silentely skip VAPs that are not controlled by OpenSync
-        if (!vap_controlled(ssid_ifname)) continue;
-
-        // Fetch existing clients
-        if (!clients_hal_fetch_existing(s))
+        for (j = 0; j < vap_info_map.num_vaps; j++)
         {
-            LOGW("Fetching existing clients for %s failed", ssid_ifname);
-        }
+            vap_index = vap_info_map.vap_array[j].vap_index;
 
-        if (!vif_state_update(s))
-        {
-            LOGW("Cannot update VIF state for SSID index %lu", s);
-            continue;
+            // Silentely skip VAPs that are not controlled by OpenSync
+            if (!vap_controlled(vap_info_map.vap_array[j].vap_name)) continue;
+
+            // Silently skip ifaces that are not enabled
+            if (!vap_info_map.vap_array[j].u.bss_info.enabled) continue;
+
+            // Fetch existing clients
+            if (!clients_hal_fetch_existing(vap_index))
+            {
+                LOGW("Fetching existing clients for %s failed", vap_info_map.vap_array[j].vap_name);
+            }
+
+            if (!vif_state_update(vap_index))
+            {
+                LOGW("Cannot update VIF state for SSID index %u", vap_index);
+            }
         }
     }
+
 out:
     LOGT("Re-sync completed");
     g_resync_ongoing = false;
@@ -1258,6 +1276,8 @@ out:
 
 bool target_radio_init(const struct target_radio_ops *ops)
 {
+    ULONG i;
+
     /* Register callbacks */
     g_rops = *ops;
 
@@ -1266,9 +1286,17 @@ bool target_radio_init(const struct target_radio_ops *ops)
         LOGW("Cannot initialize clients");
     }
 
+    cached_key_ids = CALLOC(MAX_NUM_RADIOS * MAX_NUM_VAP_PER_RADIO, sizeof(psk_key_id_t));
+    for (i = 0; i < MAX_NUM_RADIOS * MAX_NUM_VAP_PER_RADIO; i++)
+        STRSCPY(cached_key_ids[i], "key");
+
     ev_timer_init(&healthcheck_timer, healthcheck_task, 2, 0);
     ev_timer_init(&radio_resync_all_task_timer, radio_resync_all_task, RESYNC_UPDATE_DELAY_SECONDS, 0);
     ev_timer_start(wifihal_evloop, &healthcheck_timer);
+#ifdef CONFIG_RDK_EXTENDER
+    sta_hal_init();
+#endif
+
     return true;
 }
 
@@ -1279,6 +1307,7 @@ void radio_trigger_resync()
         g_resync_ongoing = true;
         LOGI("Radio re-sync scheduled");
         ev_timer_stop(wifihal_evloop, &radio_resync_all_task_timer);
+        ev_timer_set (&radio_resync_all_task_timer, RESYNC_UPDATE_DELAY_SECONDS, 0);
         ev_timer_start(wifihal_evloop, &radio_resync_all_task_timer);
     } else
     {

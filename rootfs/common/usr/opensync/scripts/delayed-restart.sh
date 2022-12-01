@@ -35,4 +35,4 @@ else
 fi
 
 sleep $tm_delay
-$CONFIG_TARGET_PATH_SCRIPTS/restart.sh
+$CONFIG_TARGET_PATH_BIN/restart.sh

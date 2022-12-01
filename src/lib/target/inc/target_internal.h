@@ -183,14 +183,10 @@ radio_cloud_mode_t   radio_cloud_mode_get(void);
 bool                 radio_rops_vstate(struct schema_Wifi_VIF_State *vstate,
                                        const char *radio_ifname);
 void                 radio_trigger_resync(void);
+INT                  get_radio_cap_index(const wifi_hal_capability_t *cap, INT radioIndex);
 bool                 radio_ifname_to_idx(const char *ifname, INT *outRadioIndex);
 bool                 radio_rops_vconfig(struct schema_Wifi_VIF_Config *vconf,
                                         const char *radio_ifname);
-
-void                 clients_connection(INT apIndex,
-                                    char *mac, char *key_id);
-void                 clients_disconnection(INT apIndex,
-                                    char *mac);
 
 void                 sync_init(sync_mgr_t mgr,
                                sync_on_connect_cb_t sync_cb);
@@ -222,6 +218,8 @@ struct               target_radio_ops;
 bool                 clients_hal_init(const struct target_radio_ops *rops);
 bool                 clients_hal_fetch_existing(unsigned int apIndex);
 
+void                 sta_hal_init();
+
 void                 cloud_config_mode_init(void);
 void                 cloud_config_set_mode(const char *device_mode);
 
@@ -243,6 +241,8 @@ void                multi_ap_to_state(INT ssid_index,
                                         struct schema_Wifi_VIF_State *vstate);
 bool                vap_controlled(const char *ifname);
 bool                is_home_ap(const char *ifname);
+
+bool                ssid_index_to_vap_info(UINT ssid_index, wifi_vap_info_map_t *map, wifi_vap_info_t **vap_info);
 
 extern struct ev_loop   *wifihal_evloop;
 

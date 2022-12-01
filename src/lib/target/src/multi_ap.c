@@ -28,6 +28,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "target.h"
 #include "target_internal.h"
+#include "memutil.h"
 
 #ifndef __WIFI_HAL_H__
 #include <ccsp/wifi_hal.h>
@@ -72,11 +73,7 @@ INT multi_ap_hal_cb(INT apIndex, wifi_multiApVlanEvent_t event)
         goto exit;
     }
 
-    if ((cbe = calloc(1, sizeof(*cbe))) == NULL)
-    {
-        LOGE("%s: Failed to allocate memory!", __func__);
-        goto exit;
-    }
+    cbe = CALLOC(1, sizeof(*cbe));
     cbe->ssid_index = apIndex;
     cbe->event = event;
 
@@ -137,7 +134,7 @@ static void multi_ap_hal_async_cb(EV_P_ ev_async *w, int revents)
         LOGI("multi_ap: received event %d, for index: %d", cbe->event, cbe->ssid_index);
         multi_ap_vif_state_update(cbe);
 
-        free(cbe);
+        FREE(cbe);
         cbe = ds_dlist_inext(&qiter);
     }
     pthread_mutex_unlock(&hal_cb_multi_ap_lock);

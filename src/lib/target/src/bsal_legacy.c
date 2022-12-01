@@ -27,6 +27,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target.h"
 #include "ds_tree.h"
 #include "target_internal.h"
+#include "memutil.h"
 
 #ifdef CONFIG_RDK_HAS_ASSOC_REQ_IES
 #include <endian.h>
@@ -167,12 +168,7 @@ static void bsal_client_info_update(const wifi_steering_evConnect_t *connect)
     client_info_cache = bsal_find_client_info(connect->client_mac);
     if (client_info_cache == NULL)  /* Allocate new node */
     {
-        client_info_cache = (bsal_client_info_cache_t *)calloc(1, sizeof(*client_info_cache));
-        if (client_info_cache == NULL)
-        {
-            LOGE("BSAL Failed to allocate memory for new client info");
-            return;
-        }
+        client_info_cache = (bsal_client_info_cache_t *)CALLOC(1, sizeof(*client_info_cache));
         memcpy(client_info_cache->mac, connect->client_mac, sizeof(client_info_cache->mac));
         ds_dlist_insert_tail(&g_client_info_list, client_info_cache);
     }
@@ -219,7 +215,7 @@ static void bsal_client_info_remove(const uint8_t *mac)
         return;
     }
     ds_dlist_remove(&g_client_info_list, client_info_cache);
-    free(client_info_cache);
+    FREE(client_info_cache);
 }
 
 static void process_event(
@@ -235,12 +231,7 @@ static void process_event(
         goto end;
     }
 
-    bsal_event = (bsal_event_t *)calloc(1, sizeof(*bsal_event));
-    if (bsal_event == NULL)
-    {
-        LOGE("BSAL Failed to allocate memory for new event");
-        goto end;
-    }
+    bsal_event = (bsal_event_t *)CALLOC(1, sizeof(*bsal_event));
 
     if (group.iface_24g && group.iface_24g->wifihal_cfg.apIndex == wifi_hal_event->apIndex)
     {
@@ -404,69 +395,21 @@ static void process_event(
 end:
     // Free the memory allocated for event here, as _bsal_event_cb will
     // allocate the memory and copy the contents
-    free(bsal_event);
+    FREE(bsal_event);
 }
 
 static bool lookup_ifname(
         const bsal_ifconfig_t *ifcfg,
         iface_t *iface)
 {
-    CHAR buf[WIFI_HAL_STR_LEN];
-    ULONG snum;
-    UINT s;
+    INT s;
     INT radio_index;
     int ret;
-    BOOL enabled = false;
+    wifi_radio_operationParam_t radio_params;
 
-    ret = wifi_getSSIDNumberOfEntries(&snum);
-    if (ret != RETURN_OK)
+    if (vif_ifname_to_idx(ifcfg->ifname, &s) == false)
     {
-        LOGE("BSAL Unable to get number of VAPs (wifi_getSSIDNumberOfEntries() failed with code %d)",
-             ret);
-        goto error;
-    }
-
-    if (snum == 0)
-    {
-        LOGE("BSAL No VAPs detected");
-        goto error;
-    }
-
-    for (s = 0; s < snum; s++)
-    {
-        ret = wifi_getSSIDEnable(s, &enabled);
-        if (ret != RETURN_OK)
-        {
-            LOGW("%s: failed to get SSID enabled state for index %d. Skipping", __func__, s);
-            continue;
-        }
-
-        // Silently skip ifaces that are not enabled
-        if (enabled == false) continue;
-
-        memset(buf, 0, sizeof(buf));
-        ret = wifi_getApName(s, buf);
-        if (ret != RETURN_OK)
-        {
-            LOGE("BSAL Failed to get ifname of VAO #%u (wifi_getApName() failed with code %d)",
-                 s, ret);
-            goto error;
-        }
-
-        // Silentely skip VAPs that are not controlled by OpenSync
-        if (!vap_controlled(buf)) continue;
-
-        if (strcmp(ifcfg->ifname, buf) != 0)
-        {
-            continue;
-        }
-
-        break;
-    }
-
-    if (s == snum)
-    {
-        LOGE("BSAL Radio with %s ifname was not found", ifcfg->ifname);
+        LOGE("BSAL unable to find vap index for %s", ifcfg->ifname);
         goto error;
     }
 
@@ -478,28 +421,31 @@ static bool lookup_ifname(
         goto error;
     }
 
-    memset(buf, 0, sizeof(buf));
-    ret = wifi_getRadioOperatingFrequencyBand(radio_index, buf);
+    ret = wifi_getRadioOperatingParameters(radio_index, &radio_params);
     if (ret != RETURN_OK)
     {
         LOGE("BSAL Failed to get operating freq of radio #%d "
-             "(wifi_getRadioOperatingFrequencyBand() failed with code %d)",
+             "(wifi_getRadioOperatingParameters() failed with code %d)",
              radio_index, ret);
         goto error;
     }
 
-    if (buf[0] == '2')
+    switch (radio_params.band)
     {
-        iface->band = BSAL_BAND_24G;
-    }
-    else if (buf[0] == '5')
-    {
-        iface->band = BSAL_BAND_5G;
-    }
-    else
-    {
-        LOGE("BSAL Radio #%d has unknown operating freq %s", radio_index, buf);
-        goto error;
+        case WIFI_FREQUENCY_2_4_BAND:
+            iface->band = BSAL_BAND_24G;
+            break;
+
+        case WIFI_FREQUENCY_5_BAND:
+        case WIFI_FREQUENCY_5L_BAND:
+        case WIFI_FREQUENCY_5H_BAND:
+            iface->band = BSAL_BAND_5G;
+            break;
+
+        case WIFI_FREQUENCY_6_BAND:
+        case WIFI_FREQUENCY_60_BAND:
+            LOGW("BSAL 6G band is not supported in legacy mode");
+            goto error;
     }
 
     memcpy(&iface->bsal_cfg, ifcfg, sizeof(iface->bsal_cfg));
@@ -510,8 +456,8 @@ static bool lookup_ifname(
     iface->wifihal_cfg.inactCheckIntervalSec = iface->bsal_cfg.inact_check_sec;
     iface->wifihal_cfg.inactCheckThresholdSec = iface->bsal_cfg.inact_tmout_sec_normal;
 
-    LOGI("BSAL Found apIndex #%d (ifname: %s, band: %s)", iface->wifihal_cfg.apIndex,
-         iface->bsal_cfg.ifname, iface->band == BSAL_BAND_24G ? "2.4G" : "5G");
+    LOGI("BSAL Found apIndex #%d (ifname: %s, band: %d)", iface->wifihal_cfg.apIndex,
+         iface->bsal_cfg.ifname, iface->band);
 
     return true;
 
@@ -1075,7 +1021,7 @@ static bool bsal_client_set_connected(
         }
     }
 
-    free(clients);
+    FREE(clients);
     return true;
 }
 
@@ -1156,6 +1102,8 @@ int target_bsal_rrm_beacon_report_request(
     wifi_BeaconRequest_t req;
     unsigned char dia_token = 0;
     int ret = 0;
+    wifi_vap_info_map_t map;
+    wifi_vap_info_t *vap_info = NULL;
 
     iface = group_get_iface_by_name(ifname);
     if (iface == NULL)
@@ -1164,6 +1112,9 @@ int target_bsal_rrm_beacon_report_request(
              MAC_ADDR_UNPACK(mac_addr), ifname);
         goto error;
     }
+
+    memset(&map, 0, sizeof(map));
+    if (!ssid_index_to_vap_info((UINT)iface->wifihal_cfg.apIndex, &map, &vap_info)) goto error;
 
     memset(&req, 0, sizeof(req));
     req.opClass = rrm_params->op_class;
@@ -1175,7 +1126,8 @@ int target_bsal_rrm_beacon_report_request(
 
     if (rrm_params->req_ssid == 1)
     {
-        if (wifi_getSSIDName(iface->wifihal_cfg.apIndex, req.ssid) == RETURN_OK)
+        STRSCPY(req.ssid, vap_info->u.bss_info.ssid);
+        if (strlen(req.ssid) > 0)
         {
             req.ssidPresent = 1;
         }
@@ -1448,10 +1400,10 @@ int target_bsal_client_info(
     return 0;
 }
 
-static int bssid_ifname_cmp(void *_a, void *_b)
+static int bssid_ifname_cmp(const void *_a, const void *_b)
 {
-    bsal_neigh_key_t *a = _a;
-    bsal_neigh_key_t *b = _b;
+    const bsal_neigh_key_t *a = _a;
+    const bsal_neigh_key_t *b = _b;
     int rc;
 
     rc = memcmp(&a->bssid, &b->bssid, sizeof(a->bssid));
@@ -1487,12 +1439,7 @@ static int bsal_send_update_neighbor_list(const char *ifname)
 
     if (iface_neighbors_number > 0)
     {
-        neighbor_reports = calloc(iface_neighbors_number, sizeof(wifi_NeighborReport_t));
-        if (!neighbor_reports)
-        {
-            LOGE("%s:%d: unable to allocate memory", __func__, __LINE__);
-            return -1;
-        }
+        neighbor_reports = CALLOC(iface_neighbors_number, sizeof(wifi_NeighborReport_t));
 
         // fill in the wifi_hal list with neighbors
         ds_tree_foreach(&bsal_ifaces_neighbors, iface_neighbor)
@@ -1515,7 +1462,7 @@ static int bsal_send_update_neighbor_list(const char *ifname)
     }
 
     ret =  wifi_setNeighborReports((UINT)ap_index, iface_neighbors_number, neighbor_reports);
-    if (neighbor_reports) free(neighbor_reports);
+    FREE(neighbor_reports);
 
     if (ret != RETURN_OK)
     {
@@ -1544,12 +1491,7 @@ int target_bsal_rrm_set_neighbor(const char *ifname, const bsal_neigh_info_t *nr
     }
     else
     {
-        iface_neighbor = calloc(1, sizeof(bsal_neighbor_t));
-        if (!iface_neighbor)
-        {
-            LOGE("%s:%d: unable to allocate memory", __func__, __LINE__);
-            return -1;
-        }
+        iface_neighbor = CALLOC(1, sizeof(bsal_neighbor_t));
         memcpy(&iface_neighbor->nr, nr, sizeof(iface_neighbor->nr));
         memcpy(&iface_neighbor->key, &key, sizeof(iface_neighbor->key));
         ds_tree_insert(&bsal_ifaces_neighbors, iface_neighbor, &iface_neighbor->key);
@@ -1561,7 +1503,7 @@ int target_bsal_rrm_set_neighbor(const char *ifname, const bsal_neigh_info_t *nr
     if (ret)
     {
         ds_tree_remove(&bsal_ifaces_neighbors, iface_neighbor);
-        free(iface_neighbor);
+        FREE(iface_neighbor);
 
         LOGE("BSAL: %s: failed adding neighbor %s, "MAC_ADDR_FMT, __func__, ifname, MAC_ADDR_UNPACK(nr->bssid));
         return ret;
@@ -1599,7 +1541,7 @@ int target_bsal_rrm_remove_neighbor(const char *ifname, const bsal_neigh_info_t 
         LOGE("BSAL: %s: failed removing neighbor %s, "MAC_ADDR_FMT, __func__, ifname, MAC_ADDR_UNPACK(nr->bssid));
         return ret;
     }
-    free(iface_neighbor);
+    FREE(iface_neighbor);
 
     LOGI("BSAL: %s: succesfully removed neighbor %s, "MAC_ADDR_FMT, __func__, ifname, MAC_ADDR_UNPACK(nr->bssid));
 

@@ -38,6 +38,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <arpa/inet.h>
 
 #include <ccsp/wifi_hal.h>
+#include "memutil.h"
 
 #define DEFAULT_PORT 5559
 #define DEFAULT_OUTPUT_PORT 5558
@@ -296,37 +297,38 @@ static void set_cfg(wifi_steering_apConfig_t *cfg, char *token, char **params,
 #ifdef WIFI_HAL_VERSION_3_PHASE2
 static bool handle_set_group(char *params)
 {
+    #define MAX_AP_CFG_NUMBER 20
     char *token;
     UINT steeringgroupIndex;
-    char cfg_2_buf[128];
-    char cfg_5_buf[128];
-    wifi_steering_apConfig_t ap_cfg[2] = {0};
-
-    memset(cfg_2_buf, 0, sizeof(cfg_2_buf));
-    memset(cfg_5_buf, 0, sizeof(cfg_5_buf));
+    char buf[MAX_AP_CFG_NUMBER][128];
+    wifi_steering_apConfig_t ap_cfg[MAX_AP_CFG_NUMBER] = {0};
+    UINT ap_cfg_number;
+    UINT i;
 
     token = strsep(&params, ";");
     LOGD("steeringgroupIndex=%s\n", token);
     steeringgroupIndex = (UINT)strtol(token, NULL, 10);
 
-    token = strsep(&params, ";");
-    if (!strcmp(token, "NULL")) strncpy(cfg_2_buf, "(NULL)", sizeof(cfg_2_buf));
-    else
+    for (ap_cfg_number = 0; ap_cfg_number < MAX_AP_CFG_NUMBER; ap_cfg_number++)
     {
-        set_cfg(&ap_cfg[0], token, &params, cfg_2_buf, sizeof(cfg_2_buf));
+        token = strsep(&params, ";");
+        if (params == NULL) break;
+
+        if (strcmp(token, "NULL") == 0) {
+            STRSCPY(buf[ap_cfg_number], "(NULL)");
+        } else {
+            set_cfg(&ap_cfg[ap_cfg_number], token, &params, buf[ap_cfg_number], sizeof(buf[ap_cfg_number]));
+        }
     }
 
-    token = strsep(&params, ";");
-    if (!strcmp(token, "NULL")) strncpy(cfg_5_buf, "(NULL)", sizeof(cfg_5_buf));
-    else
+    LOGI("wifi_steering_setGroup()\n\tsteeringgroupIndex=%u\n\t", steeringgroupIndex);
+
+    for (i = 0; i < ap_cfg_number; i++)
     {
-        set_cfg(&ap_cfg[1], token, &params, cfg_5_buf, sizeof(cfg_5_buf));
+        LOGI("cfg: %s\n", buf[i]);
     }
 
-    LOGI("wifi_steering_setGroup()\n\tsteeringgroupIndex=%u\n\tcfg_2: %s\n\tcfg_5: %s\n",
-        steeringgroupIndex, cfg_2_buf, cfg_5_buf);
-
-    return wifi_steering_setGroup(steeringgroupIndex, 2, ap_cfg);
+    return wifi_steering_setGroup(steeringgroupIndex, i, ap_cfg);
 }
 #else
 static bool handle_set_group(char *params)
@@ -700,49 +702,94 @@ static bool handle_clientRemove(char *params)
     return wifi_steering_clientRemove(steeringgroupIndex, apIndex, client_mac);
 }
 
-static bool handle_getBSSTransitionActivation(char *params)
+static bool ssid_index_to_radio_idx(UINT ssid_index, INT *radio_idx)
+{
+    if (wifi_getSSIDRadioIndex(ssid_index, radio_idx) != RETURN_OK)
+    {
+        LOGE("wifi_getSSIDRadioIndex() FAILED ssid_index=%d", ssid_index);
+        return false;
+    }
+    return true;
+}
+
+static bool ssid_index_to_vap_info(UINT ssid_index, INT radio_idx, wifi_vap_info_map_t *map, wifi_vap_info_t **vap_info)
+{
+    UINT i;
+
+    memset(map, 0, sizeof(wifi_vap_info_map_t));
+
+    if (wifi_getRadioVapInfoMap(radio_idx, map) == RETURN_OK)
+    {
+        for (i = 0; i < map->num_vaps; i++)
+        {
+            if (map->vap_array[i].vap_index == ssid_index)
+            {
+                *vap_info = &map->vap_array[i];
+                return true;
+            }
+        }
+    }
+
+    LOGE("Cannot find vap_info for ssid_index %d", ssid_index);
+    return false;
+}
+
+static bool handle_get_bssTransitionActivated(char *params)
 {
     char *token;
     INT apIndex;
-    INT ret;
-    BOOL btm;
+    INT radio_idx;
+    wifi_vap_info_map_t map = {0};
+    wifi_vap_info_t *vap_info = NULL;
 
     token = strsep(&params, ";");
     LOGD("apIndex=%s\n", token);
     apIndex = (INT)strtol(token, NULL, 10);
 
-    LOGI("wifi_getBSSTransitionActivation()\n\tapIndex=%d\n", apIndex);
-    ret = wifi_getBSSTransitionActivation(apIndex, &btm);
-    if (ret != RETURN_OK) return ret;
+    LOGI("get_bssTransitionActivated\n\tapIndex=%d\n", apIndex);
 
-    LOGI("BTM = %d (%s)", btm, btm ? "enabled" : "disabled");
-    return ret;
+    if (!ssid_index_to_radio_idx((UINT)apIndex, &radio_idx)) return true;
+
+    if (!ssid_index_to_vap_info((UINT)apIndex, radio_idx, &map, &vap_info)) return true;
+
+    LOGI("BTM = %d (%s)\n", vap_info->u.bss_info.bssTransitionActivated,
+        vap_info->u.bss_info.bssTransitionActivated ? "enabled" : "disabled");
+
+    return false;
 }
 
-static bool handle_getNeighborReportActivation(char *params)
+static bool handle_get_nbrReportActivated(char *params)
 {
     char *token;
     INT apIndex;
-    INT ret;
-    BOOL rrm;
+    INT radio_idx;
+    wifi_vap_info_map_t map = {0};
+    wifi_vap_info_t *vap_info = NULL;
 
     token = strsep(&params, ";");
     LOGD("apIndex=%s\n", token);
     apIndex = (INT)strtol(token, NULL, 10);
 
-    LOGI("wifi_getNeighborReportActivation()\n\tapIndex=%d\n", apIndex);
-    ret = wifi_getNeighborReportActivation(apIndex, &rrm);
-    if (ret != RETURN_OK) return ret;
+    LOGI("get_bssTransitionActivated\n\tapIndex=%d\n", apIndex);
 
-    LOGI("RRM = %d (%s)", rrm, rrm ? "enabled" : "disabled");
-    return ret;
+    if (!ssid_index_to_radio_idx((UINT)apIndex, &radio_idx)) return true;
+
+    if (!ssid_index_to_vap_info((UINT)apIndex, radio_idx, &map, &vap_info)) return true;
+
+    LOGI("RRM = %d (%s)\n", vap_info->u.bss_info.nbrReportActivated,
+        vap_info->u.bss_info.nbrReportActivated ? "enabled" : "disabled");
+
+    return false;
 }
 
-static bool handle_setBSSTransitionActivation(char *params)
+static bool handle_bssTransitionActivated(char *params)
 {
     char *token;
     INT apIndex;
+    INT radio_idx;
     BOOL btm;
+    wifi_vap_info_map_t map = {0};
+    wifi_vap_info_t *vap_info = NULL;
 
     token = strsep(&params, ";");
     LOGD("apIndex=%s\n", token);
@@ -752,26 +799,39 @@ static bool handle_setBSSTransitionActivation(char *params)
     LOGD("btm=%s\n", token);
     btm = (INT)strtol(token, NULL, 10);
 
-    LOGI("wifi_setBSSTransitionActivation()\n\tapIndex=%d\n\tbtm=%d\n", apIndex, btm);
-    return wifi_setBSSTransitionActivation(apIndex, btm);
+    if (!ssid_index_to_radio_idx((UINT)apIndex, &radio_idx)) return true;
+
+    if (!ssid_index_to_vap_info((UINT)apIndex, radio_idx, &map, &vap_info)) return true;
+
+    vap_info->u.bss_info.bssTransitionActivated = btm;
+
+    return wifi_createVAP((wifi_radio_index_t)radio_idx, &map);
 }
 
-static bool handle_setNeighborReportActivation(char *params)
+static bool handle_nbrReportActivated(char *params)
 {
     char *token;
     INT apIndex;
+    INT radio_idx;
     BOOL rrm;
+    wifi_vap_info_map_t map = {0};
+    wifi_vap_info_t *vap_info = NULL;
 
     token = strsep(&params, ";");
     LOGD("apIndex=%s\n", token);
     apIndex = (INT)strtol(token, NULL, 10);
 
     token = strsep(&params, ";");
-    LOGD("btm=%s\n", token);
+    LOGD("rrm=%s\n", token);
     rrm = (INT)strtol(token, NULL, 10);
 
-    LOGI("wifi_setNeighborReportActivation()\n\tapIndex=%d\n\trrm=%d\n", apIndex, rrm);
-    return wifi_setNeighborReportActivation(apIndex, rrm);
+    if (!ssid_index_to_radio_idx((UINT)apIndex, &radio_idx)) return true;
+
+    if (!ssid_index_to_vap_info((UINT)apIndex, radio_idx, &map, &vap_info)) return true;
+
+    vap_info->u.bss_info.nbrReportActivated = rrm;
+
+    return wifi_createVAP((wifi_radio_index_t)radio_idx, &map);
 }
 
 static int dispatch_cmd(const char *cmd_name, char *params)
@@ -825,24 +885,24 @@ static int dispatch_cmd(const char *cmd_name, char *params)
         return handle_clientRemove(params);
     }
 
-    if (!strcmp(cmd_name, "wifi_getBSSTransitionActivation"))
+    if (!strcmp(cmd_name, "get_bssTransitionActivated"))
     {
-        return handle_getBSSTransitionActivation(params);
+        return handle_get_bssTransitionActivated(params);
     }
 
-    if (!strcmp(cmd_name, "wifi_getNeighborReportActivation"))
+    if (!strcmp(cmd_name, "get_nbrReportActivated"))
     {
-        return handle_getNeighborReportActivation(params);
+        return handle_get_nbrReportActivated(params);
     }
 
-    if (!strcmp(cmd_name, "wifi_setBSSTransitionActivation"))
+    if (!strcmp(cmd_name, "bssTransitionActivated"))
     {
-        return handle_setBSSTransitionActivation(params);
+        return handle_bssTransitionActivated(params);
     }
 
-    if (!strcmp(cmd_name, "wifi_setNeighborReportActivation"))
+    if (!strcmp(cmd_name, "nbrReportActivated"))
     {
-        return handle_setNeighborReportActivation(params);
+        return handle_nbrReportActivated(params);
     }
 
     LOGE("unknown cmd: >>%s<<\n", cmd_name);
@@ -856,14 +916,14 @@ static bool handle_cmd(const char *cmd)
     char *token;
     bool ret = false;
 
-    buf = strdup(cmd);
+    buf = STRDUP(cmd);
     handle = buf;
 
     token = strsep(&buf, ";");
 
     ret = dispatch_cmd(token, buf);
 
-    free(handle);
+    FREE(handle);
     return ret;
 }
 
@@ -985,7 +1045,7 @@ static bool parse_ip_port(const char *input_buffer, char *ip, size_t ipsize, int
     char *token;
     bool ret = false;
 
-    buf = strdup(input_buffer);
+    buf = STRDUP(input_buffer);
     handle = buf;
 
     token = strsep(&buf, ":");
@@ -1005,7 +1065,7 @@ static bool parse_ip_port(const char *input_buffer, char *ip, size_t ipsize, int
 
     ret = true;
 exit:
-    free(handle);
+    FREE(handle);
     return ret;
 }
 

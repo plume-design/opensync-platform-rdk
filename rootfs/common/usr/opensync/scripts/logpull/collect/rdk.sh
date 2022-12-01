@@ -38,11 +38,6 @@ collect_platform_rdk()
     collect_cmd brctl show
     collect_cmd iw dev
 
-    # Device info
-    for x in -mo -sn -fw -ms -mu -cmac -cip -cipv6 -emac -eip -eipv6 -lmac -lip -lipv6; do
-        collect_cmd deviceinfo.sh $x
-    done
-
     # RDK Logs
     if [ -d /rdklogs/logs ]; then
         collect_dir /rdklogs/logs

@@ -22,13 +22,10 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-OS_TARGETS += RDKB
-
-ifeq ($(TARGET),RDKB)
+ifeq ($(PLATFORM),rdk)
 
 V          ?= 1
 ARCH        = rdk
-PLATFORM    = rdk
 ARCH_MK    := platform/$(PLATFORM)/build/$(ARCH).mk
 
 # Configure features (y = Enabled, n = Disabled)
@@ -41,7 +38,7 @@ $(info "RDK:")
 $(info Included $(lastword $(MAKEFILE_LIST)))
 $(info TARGET=$(TARGET))
 $(info RDK_DISTRO=$(RDK_DISTRO))
-$(info RDK_MACHINE=$(RDK_MACHINE))
+$(info PLATFORM=$(PLATFORM))
 $(info RDK_TARGET_ARCH=$(RDK_TARGET_ARCH))
 
 endif

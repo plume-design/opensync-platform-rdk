@@ -30,7 +30,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdarg.h>
 #include <stdbool.h>
 
+#include "util.h"
+
 #include <ccsp/wifi_hal.h>
+#include "memutil.h"
 
 #define LOG(...) printf("WIFIHALTOOL: "  __VA_ARGS__)
 #define MAX_NAME_LEN 128
@@ -72,43 +75,20 @@ typedef struct
 static void handle_wifi_getRadioNumberOfEntries(int number_of_params, char **params);
 static void handle_wifi_getRadioIfName(int number_of_params, char **params);
 static void handle_wifi_getRadioOperatingFrequencyBand(int number_of_params, char **params);
-static void handle_wifi_getRadioChannel(int number_of_params, char **params);
-static void handle_wifi_getRadioEnable(int number_of_params, char **params);
 static void handle_wifi_getRadioTransmitPower(int number_of_params, char **params);
-static void handle_wifi_getRadioOperatingChannelBandwidth(int number_of_params, char **params);
-static void handle_wifi_getRadioCountryCode(int number_of_params, char **params);
-static void handle_wifi_getRadioStandard(int number_of_params, char **params);
 static void handle_wifi_getRadioPossibleChannels(int number_of_params, char **params);
 static void handle_wifi_getRadioChannels(int number_of_params, char **params);
 static void handle_wifi_getSSIDNumberOfEntries(int number_of_params, char **params);
 static void handle_wifi_getApName(int number_of_params, char **params);
 static void handle_wifi_getSSIDEnable(int number_of_params, char **params);
-static void handle_wifi_getApIsolationEnable(int number_of_params, char **params);
-static void handle_wifi_getApSsidAdvertisementEnable(int number_of_params, char **params);
 static void handle_wifi_getSSIDNameStatus(int number_of_params, char **params);
 static void handle_wifi_getSSIDName(int number_of_params, char **params);
 static void handle_wifi_getSSIDRadioIndex(int number_of_params, char **params);
-static void handle_wifi_getBaseBSSID(int number_of_params, char **params);
-static void handle_wifi_getNeighborReportActivation(int number_of_params, char **params);
-static void handle_wifi_getBSSTransitionActivation(int number_of_params, char **params);
-static void handle_wifi_getApSecurityModeEnabled(int number_of_params, char **params);
-static void handle_wifi_getApSecurityKeyPassphrase(int number_of_params, char **params);
-static void handle_wifi_getApMacAddressControlMode(int number_of_params, char **params);
 static void handle_wifi_getApAclDevices(int number_of_params, char **params);
 static void handle_wifi_setRadioStatsEnable(int number_of_params, char **params);
 static void handle_wifi_pushRadioChannel2(int number_of_params, char **params);
-static void handle_wifi_setApMacAddressControlMode(int number_of_params, char **params);
 static void handle_wifi_delApAclDevices(int number_of_params, char **params);
 static void handle_wifi_addApAclDevice(int number_of_params, char **params);
-static void handle_wifi_setApSsidAdvertisementEnable(int number_of_params, char **params);
-static void handle_wifi_setSSIDName(int number_of_params, char **params);
-static void handle_wifi_setApSecurityModeEnabled(int number_of_params, char **params);
-static void handle_wifi_setApSecurityKeyPassphrase(int number_of_params, char **params);
-static void handle_wifi_setSSIDEnable(int number_of_params, char **params);
-static void handle_wifi_setApIsolationEnable(int number_of_params, char **params);
-static void handle_wifi_setNeighborReportActivation(int number_of_params, char **params);
-static void handle_wifi_setBSSTransitionActivation(int number_of_params, char **params);
-static void handle_wifi_applySSIDSettings(int number_of_params, char **params);
 static void handle_wifi_startNeighborScan(int number_of_params, char **params);
 static void handle_wifi_getRadioChannelStats(int number_of_params, char **params);
 static void handle_wifi_getNeighboringWiFiStatus(int number_of_params, char **params);
@@ -118,50 +98,30 @@ static void handle_wifi_getApAssociatedDeviceRxStatsResult(int number_of_params,
 static void handle_wifi_getApAssociatedDeviceTxStatsResult(int number_of_params, char **params);
 static void handle_wifi_pushMultiPskKeys(int number_of_params, char **params);
 static void handle_wifi_getMultiPskKeys(int number_of_params, char **params);
+static void handle_wifi_getRadioVapInfoMap(int number_of_params, char **params);
+static void handle_wifi_createVAP(int number_of_params, char **params);
+static void handle_wifi_getRadioOperatingParameters(int number_of_params, char **params);
 
 static command_t commands_map[] = {
     { "wifi_getRadioNumberOfEntries", "", handle_wifi_getRadioNumberOfEntries, false},
     { "wifi_getRadioIfName", "radioIndex", handle_wifi_getRadioIfName, false},
     { "wifi_getRadioOperatingFrequencyBand", "radioIndex",
         handle_wifi_getRadioOperatingFrequencyBand, false},
-    { "wifi_getRadioChannel", "radioIndex", handle_wifi_getRadioChannel, false},
-    { "wifi_getRadioEnable", "radioIndex", handle_wifi_getRadioEnable, false},
     { "wifi_getRadioTransmitPower", "radioIndex", handle_wifi_getRadioTransmitPower, false},
-    { "wifi_getRadioOperatingChannelBandwidth", "radioIndex", handle_wifi_getRadioOperatingChannelBandwidth, false},
-    { "wifi_getRadioCountryCode", "radioIndex", handle_wifi_getRadioCountryCode, false},
-    { "wifi_getRadioStandard", "radioIndex", handle_wifi_getRadioStandard, false},
     { "wifi_getRadioPossibleChannels", "radioIndex", handle_wifi_getRadioPossibleChannels, false},
     { "wifi_getRadioChannels", "radioIndex", handle_wifi_getRadioChannels, false},
     { "wifi_getSSIDNumberOfEntries", "", handle_wifi_getSSIDNumberOfEntries, false},
     { "wifi_getApName", "apIndex", handle_wifi_getApName, false},
     { "wifi_getSSIDEnable", "apIndex", handle_wifi_getSSIDEnable, false},
-    { "wifi_getApIsolationEnable", "apIndex", handle_wifi_getApIsolationEnable, false},
-    { "wifi_getApSsidAdvertisementEnable", "apIndex", handle_wifi_getApSsidAdvertisementEnable, false},
     { "wifi_getSSIDNameStatus", "apIndex", handle_wifi_getSSIDNameStatus, false},
     { "wifi_getSSIDName", "apIndex", handle_wifi_getSSIDName, false},
     { "wifi_getSSIDRadioIndex", "apIndex", handle_wifi_getSSIDRadioIndex, false},
-    { "wifi_getBaseBSSID", "apIndex", handle_wifi_getBaseBSSID, false},
-    { "wifi_getNeighborReportActivation", "apIndex", handle_wifi_getNeighborReportActivation, false},
-    { "wifi_getBSSTransitionActivation", "apIndex", handle_wifi_getBSSTransitionActivation, false},
-    { "wifi_getApSecurityModeEnabled", "apIndex", handle_wifi_getApSecurityModeEnabled, false},
-    { "wifi_getApSecurityKeyPassphrase", "apIndex", handle_wifi_getApSecurityKeyPassphrase, false},
-    { "wifi_getApMacAddressControlMode", "apIndex", handle_wifi_getApMacAddressControlMode, false},
     { "wifi_getApAclDevices", "apIndex", handle_wifi_getApAclDevices, false},
     { "wifi_setRadioStatsEnable", "radioIndex enable", handle_wifi_setRadioStatsEnable, false},
     { "wifi_pushRadioChannel2",
         "radioIndex channel ch_width_MHz csa_beacon_count", handle_wifi_pushRadioChannel2, false},
-    { "wifi_setApMacAddressControlMode", "apIndex acl_mode", handle_wifi_setApMacAddressControlMode, false},
     { "wifi_delApAclDevices", "apIndex", handle_wifi_delApAclDevices, false},
     { "wifi_addApAclDevice", "apIndex mac", handle_wifi_addApAclDevice, false},
-    { "wifi_setApSsidAdvertisementEnable", "apIndex enable", handle_wifi_setApSsidAdvertisementEnable, false},
-    { "wifi_setSSIDName", "apIndex ssid", handle_wifi_setSSIDName, false},
-    { "wifi_setApSecurityModeEnabled", "apIndex mode_str", handle_wifi_setApSecurityModeEnabled, false},
-    { "wifi_setApSecurityKeyPassphrase", "apIndex passphrase", handle_wifi_setApSecurityKeyPassphrase, false},
-    { "wifi_setSSIDEnable", "apIndex enable", handle_wifi_setSSIDEnable, false},
-    { "wifi_setApIsolationEnable", "apIndex enable", handle_wifi_setApIsolationEnable, false},
-    { "wifi_setNeighborReportActivation", "apIndex activate", handle_wifi_setNeighborReportActivation, false},
-    { "wifi_setBSSTransitionActivation", "apIndex activate", handle_wifi_setBSSTransitionActivation, false},
-    { "wifi_applySSIDSettings", "apIndex", handle_wifi_applySSIDSettings, false},
     { "wifi_startNeighborScan", "apIndex scan_mode dwell_time number_of_channels chan_list",
         handle_wifi_startNeighborScan, true},
     { "wifi_getRadioChannelStats", "radioIndex number_of_channels chan_list",
@@ -173,6 +133,9 @@ static command_t commands_map[] = {
     { "wifi_getApAssociatedDeviceTxStatsResult", "radioIndex mac", handle_wifi_getApAssociatedDeviceTxStatsResult, false},
     { "wifi_pushMultiPskKeys", "apIndex numKeys PSK1 KeyId1 ... PSKN KeyIdN", handle_wifi_pushMultiPskKeys, true},
     { "wifi_getMultiPskKeys", "apIndex", handle_wifi_getMultiPskKeys, false},
+    { "wifi_getRadioVapInfoMap", "apIndex", handle_wifi_getRadioVapInfoMap, false},
+    { "wifi_createVAP", "apIndex", handle_wifi_createVAP, false},
+    { "handle_wifi_getRadioOperatingParameters", "radioIndex", handle_wifi_getRadioOperatingParameters, false},
 };
 
 #define COMMANDS_LEN (int)(sizeof(commands_map)/sizeof(commands_map[0]))
@@ -251,25 +214,6 @@ static void handle_wifi_getRadioOperatingFrequencyBand(int number_of_params, cha
             ret, band);
 }
 
-static void handle_wifi_getRadioChannel(int number_of_params, char **params)
-{
-    INT ret;
-    INT radioIndex;
-    ULONG channel = 0;
-
-    radioIndex = atoi(params[0]);
-
-    ret = wifi_getRadioChannel(radioIndex, &channel);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getRadioChannel FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getRadioChannel(%d) OK ret=%d channel=%lu\n", (int)radioIndex,
-            ret, channel);
-}
-
 static void handle_wifi_setRadioStatsEnable(int number_of_params, char **params)
 {
     INT ret;
@@ -315,25 +259,6 @@ static void handle_wifi_pushRadioChannel2(int number_of_params, char **params)
             channel, channel_width_MHz, csa_beacon_count, ret);
 }
 
-static void handle_wifi_getRadioEnable(int number_of_params, char **params)
-{
-    INT ret;
-    INT radioIndex;
-    BOOL enabled = 0;
-
-    radioIndex = atoi(params[0]);
-
-    ret = wifi_getRadioEnable(radioIndex, &enabled);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getRadioEnable FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getRadioEnable(%d) OK ret=%d enabled=%d\n", (int)radioIndex,
-            ret, enabled);
-}
-
 static void handle_wifi_getRadioTransmitPower(int number_of_params, char **params)
 {
     INT ret;
@@ -351,70 +276,6 @@ static void handle_wifi_getRadioTransmitPower(int number_of_params, char **param
 
     LOG("wifi_getRadioTransmitPower(%d) OK ret=%d power=%lu\n", (int)radioIndex,
             ret, power);
-}
-
-static void handle_wifi_getRadioOperatingChannelBandwidth(int number_of_params, char **params)
-{
-    INT ret;
-    INT radioIndex;
-    CHAR bandwidth[64];
-
-    memset(bandwidth, 0, sizeof(bandwidth));
-    radioIndex = atoi(params[0]);
-
-    ret = wifi_getRadioOperatingChannelBandwidth(radioIndex, bandwidth);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getRadioOperatingChannelBandwidth FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getRadioOperatingChannelBandwidth(%d) OK ret=%d bandwidth=>>%s<<\n", (int)radioIndex,
-            ret, bandwidth);
-}
-
-static void handle_wifi_getRadioCountryCode(int number_of_params, char **params)
-{
-    INT ret;
-    INT radioIndex;
-    CHAR country_code[64];
-
-    memset(country_code, 0, sizeof(country_code));
-    radioIndex = atoi(params[0]);
-
-    ret = wifi_getRadioCountryCode(radioIndex, country_code);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getRadioCountryCode FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getRadioCountryCode(%d) OK ret=%d country=>>%s<<\n", (int)radioIndex,
-            ret, country_code);
-}
-
-static void handle_wifi_getRadioStandard(int number_of_params, char **params)
-{
-    INT ret;
-    INT radioIndex;
-    CHAR standard[64];
-    BOOL gonly = 0;
-    BOOL nonly = 0;
-    BOOL aconly = 0;
-
-    memset(standard, 0, sizeof(standard));
-    radioIndex = atoi(params[0]);
-
-    ret = wifi_getRadioStandard(radioIndex, standard, &gonly, &nonly, &aconly);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getRadioStandard FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getRadioStandard(%d) OK ret=%d standard=>>%s<< "
-            "gonly=%d nonly=%d aconly=%d\n", (int)radioIndex,
-            ret, standard, gonly, nonly, aconly);
 }
 
 static void handle_wifi_getRadioPossibleChannels(int number_of_params, char **params)
@@ -523,44 +384,6 @@ static void handle_wifi_getSSIDEnable(int number_of_params, char **params)
             ret, enabled);
 }
 
-static void handle_wifi_getApIsolationEnable(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    BOOL enabled = 0;
-
-    apIndex = atoi(params[0]);
-
-    ret = wifi_getApIsolationEnable(apIndex, &enabled);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getApIsolationEnable FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getApIsolationEnable(%d) OK ret=%d enabled=%d\n", (int)apIndex,
-            ret, enabled);
-}
-
-static void handle_wifi_getApSsidAdvertisementEnable(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    BOOL enabled = 0;
-
-    apIndex = atoi(params[0]);
-
-    ret = wifi_getApSsidAdvertisementEnable(apIndex, &enabled);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getApSsidAdvertisementEnable FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getApSsidAdvertisementEnable(%d) OK ret=%d enabled=%d\n", (int)apIndex,
-            ret, enabled);
-}
-
 static void handle_wifi_getSSIDNameStatus(int number_of_params, char **params)
 {
     INT ret;
@@ -620,126 +443,6 @@ static void handle_wifi_getSSIDRadioIndex(int number_of_params, char **params)
             ret, radioIndex);
 }
 
-static void handle_wifi_getBaseBSSID(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    CHAR mac[128];
-
-    memset(mac, 0, sizeof(mac));
-
-    apIndex = atoi(params[0]);
-
-    ret = wifi_getBaseBSSID(apIndex, mac);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getBaseBSSID FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getBaseBSSID(%d) OK ret=%d mac=>>%s<<\n", (int)apIndex,
-            ret, mac);
-}
-
-static void handle_wifi_getNeighborReportActivation(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    BOOL rrm = 0;
-
-    apIndex = atoi(params[0]);
-
-    ret = wifi_getNeighborReportActivation(apIndex, &rrm);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getNeighborReportActivation FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getNeighborReportActivation(%d) OK ret=%d rrm=%d\n", (int)apIndex,
-            ret, rrm);
-}
-
-static void handle_wifi_getBSSTransitionActivation(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    BOOL btm = 0;
-
-    apIndex = atoi(params[0]);
-
-    ret = wifi_getBSSTransitionActivation(apIndex, &btm);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getBSSTransitionActivation FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getBSSTransitionActivation(%d) OK ret=%d btm=%d\n", (int)apIndex,
-            ret, btm);
-}
-
-static void handle_wifi_getApSecurityModeEnabled(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    CHAR mode[128];
-
-    memset(mode, 0, sizeof(mode));
-
-    apIndex = atoi(params[0]);
-
-    ret = wifi_getApSecurityModeEnabled(apIndex, mode);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getApSecurityModeEnabled FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getApSecurityModeEnabled(%d) OK ret=%d mode=>>%s<<\n", (int)apIndex,
-            ret, mode);
-}
-
-static void handle_wifi_getApSecurityKeyPassphrase(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    CHAR passphrase[128];
-
-    memset(passphrase, 0, sizeof(passphrase));
-
-    apIndex = atoi(params[0]);
-
-    ret = wifi_getApSecurityKeyPassphrase(apIndex, passphrase);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getApSecurityKeyPassphrase FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getApSecurityKeyPassphrase(%d) OK ret=%d passphrase=>>%s<<\n", (int)apIndex,
-            ret, passphrase);
-}
-
-static void handle_wifi_getApMacAddressControlMode(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    INT acl_mode = 0;
-
-    apIndex = atoi(params[0]);
-
-    ret = wifi_getApMacAddressControlMode(apIndex, &acl_mode);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_getApMacAddressControlMode FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_getApMacAddressControlMode(%d) OK ret=%d acl_mode=%d\n", (int)apIndex,
-            ret, acl_mode);
-}
-
 static void handle_wifi_getApAclDevices(int number_of_params, char **params)
 {
     INT ret;
@@ -780,26 +483,6 @@ static void handle_wifi_getApAclDevices(int number_of_params, char **params)
     }
     LOG("<<\n");
 #endif
-}
-
-static void handle_wifi_setApMacAddressControlMode(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    INT acl_mode = 0;
-
-    apIndex = atoi(params[0]);
-    acl_mode = atoi(params[1]);
-
-    ret = wifi_setApMacAddressControlMode(apIndex, acl_mode);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_setApMacAddressControlMode FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_setApMacAddressControlMode(%d, %d) OK ret=%d\n", (int)apIndex,
-            acl_mode, ret);
 }
 
 static void handle_wifi_delApAclDevices(int number_of_params, char **params)
@@ -845,189 +528,6 @@ static void handle_wifi_addApAclDevice(int number_of_params, char **params)
 
     LOG("wifi_addApAclDevice(%d, >>%s<<) OK ret=%d\n", (int)apIndex,
             params[1], ret);
-}
-
-static void handle_wifi_setApSsidAdvertisementEnable(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    BOOL enabled = 0;
-
-    apIndex = atoi(params[0]);
-    enabled = atoi(params[1]);
-
-    ret = wifi_setApSsidAdvertisementEnable(apIndex, enabled);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_setApSsidAdvertisementEnable FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_setApSsidAdvertisementEnable(%d, %d) OK ret=%d\n", (int)apIndex,
-            enabled, ret);
-}
-
-static void handle_wifi_setSSIDName(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    CHAR ssid[256];
-
-    memset(ssid, 0, sizeof(ssid));
-
-    apIndex = atoi(params[0]);
-    strncpy(ssid, params[1], sizeof(ssid) - 1);
-
-    ret = wifi_setSSIDName(apIndex, ssid);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_setSSIDName FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_setSSIDName(%d, >>%s<<) OK ret=%d\n", (int)apIndex,
-            ssid, ret);
-}
-
-static void handle_wifi_setApSecurityModeEnabled(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    CHAR mode[256];
-
-    memset(mode, 0, sizeof(mode));
-
-    apIndex = atoi(params[0]);
-    strncpy(mode, params[1], sizeof(mode) - 1);
-
-    ret = wifi_setApSecurityModeEnabled(apIndex, mode);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_setApSecurityModeEnabled FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_setApSecurityModeEnabled(%d, >>%s<<) OK ret=%d\n", (int)apIndex,
-            mode, ret);
-}
-
-static void handle_wifi_setApSecurityKeyPassphrase(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    CHAR passphrase[256];
-
-    memset(passphrase, 0, sizeof(passphrase));
-
-    apIndex = atoi(params[0]);
-    strncpy(passphrase, params[1], sizeof(passphrase) - 1);
-
-    ret = wifi_setApSecurityKeyPassphrase(apIndex, passphrase);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_setApSecurityKeyPassphrase FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_setApSecurityKeyPassphrase(%d, >>%s<<) OK ret=%d\n", (int)apIndex,
-            passphrase, ret);
-}
-
-static void handle_wifi_setSSIDEnable(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    BOOL enabled = 0;
-
-    apIndex = atoi(params[0]);
-    enabled = atoi(params[1]);
-
-    ret = wifi_setSSIDEnable(apIndex, enabled);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_setSSIDEnable FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_setSSIDEnable(%d, %d) OK ret=%d\n", (int)apIndex,
-            enabled, ret);
-}
-
-static void handle_wifi_setApIsolationEnable(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    BOOL enabled = 0;
-
-    apIndex = atoi(params[0]);
-    enabled = atoi(params[1]);
-
-    ret = wifi_setApIsolationEnable(apIndex, enabled);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_setApIsolationEnable FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_setApIsolationEnable(%d, %d) OK ret=%d\n", (int)apIndex,
-            enabled, ret);
-}
-
-static void handle_wifi_setNeighborReportActivation(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    BOOL activate = 0;
-
-    apIndex = atoi(params[0]);
-    activate = atoi(params[1]);
-
-    ret = wifi_setNeighborReportActivation(apIndex, activate);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_setNeighborReportActivation FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_setNeighborReportActivation(%d, %d) OK ret=%d\n", (int)apIndex,
-            activate, ret);
-}
-
-static void handle_wifi_setBSSTransitionActivation(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-    BOOL activate = 0;
-
-    apIndex = atoi(params[0]);
-    activate = atoi(params[1]);
-
-    ret = wifi_setBSSTransitionActivation(apIndex, activate);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_setBSSTransitionActivation FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_setBSSTransitionActivation(%d, %d) OK ret=%d\n", (int)apIndex,
-            activate, ret);
-}
-
-static void handle_wifi_applySSIDSettings(int number_of_params, char **params)
-{
-    INT ret;
-    INT apIndex;
-
-    apIndex = atoi(params[0]);
-
-    ret = wifi_applySSIDSettings(apIndex);
-    if (ret != RETURN_OK)
-    {
-        LOG("wifi_applySSIDSettings FAILED ret=%d\n", (int)ret);
-        return;
-    }
-
-    LOG("wifi_applySSIDSettings(%d) OK ret=%d\n", (int)apIndex, ret);
 }
 
 static void handle_wifi_startNeighborScan(int number_of_params, char **params)
@@ -1337,12 +837,7 @@ static void handle_wifi_pushMultiPskKeys(int number_of_params, char **params)
         return;
     }
 
-    keys = calloc(keysNumber, sizeof(wifi_key_multi_psk_t));
-    if (keys == NULL)
-    {
-        LOG("%s: Failed to allocate memory\n", __func__);
-        return;
-    }
+    keys = CALLOC(keysNumber, sizeof(wifi_key_multi_psk_t));
 
     for (i = 0; i < keysNumber; i++)
     {
@@ -1358,6 +853,7 @@ static void handle_wifi_pushMultiPskKeys(int number_of_params, char **params)
     }
 
     LOG("wifi_pushMultiPskKeys(%d) OK ret=%d\n", (int)apIndex, ret);
+    FREE(keys);
 }
 
 static void handle_wifi_getMultiPskKeys(int number_of_params, char **params)
@@ -1386,6 +882,222 @@ static void handle_wifi_getMultiPskKeys(int number_of_params, char **params)
          }
     }
     LOG("wifi_getMultiPskKeys(%d) OK ret=%d\n", (int)apIndex, ret);
+}
+
+static bool get_vaps_map(wifi_radio_index_t index, wifi_vap_info_map_t *map)
+{
+    INT ret;
+    unsigned int i;
+
+    ret = wifi_getRadioVapInfoMap(index, map);
+    if (ret != RETURN_OK)
+    {
+        LOG("wifi_getRadioVapInfoMap FAILED ret=%d\n", (int)ret);
+        return false;
+    }
+
+    LOG("wifi_getRadioVapInfoMap(%d) OK ret=%d\n", (int)index, ret);
+    printf("num_vaps=%u\n", map->num_vaps);
+    for (i = 0; i < map->num_vaps; i++)
+    {
+        printf("%u vap_index=%d\n"
+               "%u vap_name=%s\n"
+               "%u radio_index=%u\n"
+               "%u bridge_name=%s\n"
+               "%u u.bss_info.ssid=%s\n"
+               "%u u.bss_info.enabled=%d\n"
+               "%u u.bss_info.showSsid=%d\n"
+               "%u u.bss_info.isolation=%d\n"
+               "%u u.bss_info.bssTransitionActivated=%d\n"
+               "%u u.bss_info.nbrReportActivated=%d\n"
+               "%u u.bss_info.security.u.key.key=%s\n"
+               "%u u.bss_info.security.mode=%d\n"
+               "%u u.bss_info.mac_filter_enable=%d\n"
+               "%u u.bss_info.mac_filter_mode=%d\n"
+               "%u u.bss_info.UAPSDEnabled=%d\n",
+               i, map->vap_array[i].vap_index, i, map->vap_array[i].vap_name, i, map->vap_array[i].radio_index,
+               i, map->vap_array[i].bridge_name, i, map->vap_array[i].u.bss_info.ssid, i, map->vap_array[i].u.bss_info.enabled,
+               i, map->vap_array[i].u.bss_info.showSsid, i, map->vap_array[i].u.bss_info.isolation,
+               i, map->vap_array[i].u.bss_info.bssTransitionActivated, i, map->vap_array[i].u.bss_info.nbrReportActivated,
+               i, map->vap_array[i].u.bss_info.security.u.key.key, i, map->vap_array[i].u.bss_info.security.mode,
+               i, map->vap_array[i].u.bss_info.mac_filter_enable, i, map->vap_array[i].u.bss_info.mac_filter_mode,
+               i, map->vap_array[i].u.bss_info.UAPSDEnabled);
+    }
+    return true;
+}
+
+static void handle_wifi_getRadioVapInfoMap(int number_of_params, char **params)
+{
+    wifi_radio_index_t index;
+    wifi_vap_info_map_t map = {0};
+
+    index = atoi(params[0]);
+
+    get_vaps_map(index, &map);
+}
+
+static void handle_wifi_createVAP(int number_of_params, char **params)
+{
+    wifi_radio_index_t index;
+    wifi_vap_info_map_t map;
+    INT ret;
+    char line[1024] = {0};
+    const char key_val_delim = '=';
+    const char id_delim = ' ';
+    char *ptr_key, *ptr_val;
+    unsigned int vap_id;
+
+    index = atoi(params[0]);
+
+    if (!get_vaps_map(index, &map))
+    {
+        return;
+    }
+
+    while (fgets(line, sizeof(line), stdin) != NULL)
+    {
+        ptr_key = strchr(line, id_delim);
+        if (ptr_key == NULL)
+        {
+            LOG("Invalid line, no vap id separator '%c'\n", id_delim);
+            continue;
+        }
+
+        vap_id = atoi(line);
+        ptr_key++;
+        ptr_val = strchr(ptr_key, key_val_delim);
+        if (ptr_val == NULL)
+        {
+            LOG("Invalid line, no vap key/value separator '%c'\n", key_val_delim);
+            continue;
+        }
+        *ptr_val = '\0';
+        ptr_val++;
+
+        if (!strcmp(ptr_key, "u.bss_info.ssid"))
+        {
+            STRSCPY(map.vap_array[vap_id].u.bss_info.ssid, ptr_val);
+        }
+        else if (!strcmp(ptr_key, "u.bss_info.enabled"))
+        {
+            map.vap_array[vap_id].u.bss_info.enabled = atoi(ptr_val);
+        }
+        else if (!strcmp(ptr_key, "u.bss_info.showSsid"))
+        {
+            map.vap_array[vap_id].u.bss_info.showSsid = atoi(ptr_val);
+        }
+        else if (!strcmp(ptr_key, "u.bss_info.isolation"))
+        {
+            map.vap_array[vap_id].u.bss_info.isolation = atoi(ptr_val);
+        }
+        else if (!strcmp(ptr_key, "u.bss_info.bssTransitionActivated"))
+        {
+            map.vap_array[vap_id].u.bss_info.bssTransitionActivated = atoi(ptr_val);
+        }
+        else if (!strcmp(ptr_key, "u.bss_info.nbrReportActivated"))
+        {
+            map.vap_array[vap_id].u.bss_info.nbrReportActivated = atoi(ptr_val);
+        }
+        else if (!strcmp(ptr_key, "u.bss_info.security.u.key.key"))
+        {
+            STRSCPY(map.vap_array[vap_id].u.bss_info.security.u.key.key, ptr_val);
+        }
+        else if (!strcmp(ptr_key, "u.bss_info.security.mode"))
+        {
+            map.vap_array[vap_id].u.bss_info.security.mode = atoi(ptr_val);
+        }
+        else if (!strcmp(ptr_key, "u.bss_info.mac_filter_enable"))
+        {
+            map.vap_array[vap_id].u.bss_info.mac_filter_enable = atoi(ptr_val);
+        }
+        else if (!strcmp(ptr_key, "u.bss_info.mac_filter_mode"))
+        {
+            map.vap_array[vap_id].u.bss_info.mac_filter_mode = atoi(ptr_val);
+        }
+        else if (!strcmp(ptr_key, "u.bss_info.UAPSDEnabled"))
+        {
+            map.vap_array[vap_id].u.bss_info.UAPSDEnabled = atoi(ptr_val);
+        }
+    }
+
+    ret = wifi_createVAP(index, &map);
+    if (ret != RETURN_OK)
+    {
+        LOG("wifi_createVAP FAILED ret=%d\n", (int)ret);
+        return;
+    }
+
+    LOG("wifi_createVAP(%d) OK ret=%d\n", index, ret);
+}
+
+static void handle_wifi_getRadioOperatingParameters(int number_of_params, char **params)
+{
+    wifi_radio_index_t index;
+    wifi_radio_operationParam_t operationParam;
+    INT ret;
+    unsigned int i;
+
+    index = atoi(params[0]);
+
+    ret = wifi_getRadioOperatingParameters(index, &operationParam);
+    if (ret != RETURN_OK)
+    {
+        LOG("wifi_getRadioOperatingParameters FAILED ret=%d\n", (int)ret);
+        return;
+    }
+
+    LOG("wifi_getRadioOperatingParameters(%d) OK ret=%d\n", (int)index, ret);
+
+    printf("enable=%s\n"
+           "band=%d\n"
+           "autoChannelEnabled=%s\n"
+           "channel=%u\n"
+           "channelWidth=0x%x\n"
+           "variant=0x%x\n"
+           "csa_beacon_count=%u\n"
+           "countryCode=%d\n"
+           "DCSEnabled=%s\n"
+           "dtimPeriod=%u\n"
+           "beaconInterval=%u\n"
+           "operatingClass=%u\n"
+           "basicDataTransmitRates=%u\n"
+           "operationalDataTransmitRates=%u\n"
+           "fragmentationThreshold=%u\n"
+           "guardInterval=0x%x\n"
+           "transmitPower=%u\n"
+           "rtsThreshold=%u\n"
+           "factoryResetSsid=%u\n"
+           "radioStatsMeasuringRate=%u\n"
+           "radioStatsMeasuringInterval=%u\n"
+           "ctsProtection=%s\n"
+           "obssCoex=%s\n"
+           "stbcEnable=%s\n"
+           "greenFieldEnable=%s\n"
+           "userControl=%u\n"
+           "adminControl=%u\n"
+           "chanUtilThreshold=%u\n"
+           "chanUtilSelfHealEnable=%s\n"
+           "numSecondaryChannels=%u\n"
+           "channelSecondary=",
+           operationParam.enable ? "true" : "false", operationParam.band,
+           operationParam.autoChannelEnabled ? "true" : "false", operationParam.channel,
+           operationParam.channelWidth, operationParam.variant, operationParam.csa_beacon_count,
+           operationParam.countryCode, operationParam.DCSEnabled ? "true" : "false", operationParam.dtimPeriod,
+           operationParam.beaconInterval, operationParam.operatingClass, operationParam.basicDataTransmitRates,
+           operationParam.operationalDataTransmitRates, operationParam.fragmentationThreshold,
+           operationParam.guardInterval, operationParam.transmitPower, operationParam.rtsThreshold,
+           operationParam.factoryResetSsid, operationParam.radioStatsMeasuringRate,
+           operationParam.radioStatsMeasuringInterval, operationParam.ctsProtection ? "true" : "false",
+           operationParam.obssCoex ? "true" : "false", operationParam.stbcEnable ? "true" : "false",
+           operationParam.greenFieldEnable ? "true" : "false", operationParam.userControl,
+           operationParam.adminControl, operationParam.chanUtilThreshold,
+           operationParam.chanUtilSelfHealEnable ? "true" : "false", operationParam.numSecondaryChannels
+           );
+    for (i = 0; i < operationParam.numSecondaryChannels; i++)
+    {
+        printf("%u ", operationParam.channelSecondary[i]);
+    }
+    printf("\n");
 }
 
 static int get_number_of_params(const char *params)

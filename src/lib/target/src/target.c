@@ -66,13 +66,13 @@ bool target_ready(struct ev_loop *loop)
         LOGW("Target not ready, failed to query model number");
         return false;
     }
-
+#ifndef CONFIG_RDK_EXTENDER
     if (!osp_unit_platform_version_get(ARRAY_AND_SIZE(tmp)))
     {
         LOGW("Target not ready, failed to query platform version");
         return false;
     }
-
+#endif
     wifihal_evloop = loop;
 
     return true;
@@ -81,18 +81,19 @@ bool target_ready(struct ev_loop *loop)
 bool target_init(target_init_opt_t opt, struct ev_loop *loop)
 {
     INT ret;
-    CHAR str[64];  // Unfortunately, the RDK Wifi HAL doesn't specify
-                   // the maximum length of version string. It is usually
-                   // something like "2.0.0", so assume 64 is enough.
+    wifi_hal_capability_t cap;
 
     wifihal_evloop = loop;
+    memset(&cap, 0, sizeof(cap));
 
-    ret = wifi_getHalVersion(str);
+    ret = wifi_getHalCapability(&cap);
     if (ret != RETURN_OK)
     {
         LOGE("Manager %d: cannot get HAL version", opt);
         return false;
     }
+
+    LOGI("HAL version: %d.%d", cap.version.major, cap.version.minor);
 
     switch (opt)
     {

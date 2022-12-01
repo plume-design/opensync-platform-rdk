@@ -50,6 +50,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "log.h"
 #include "pl2rl.h"
 #include "ds_dlist.h"
+#include "memutil.h"
 
 #define MODULE_ID           LOG_MODULE_ID_MAIN
 
@@ -111,10 +112,7 @@ bool pl2rld_client_add(int fd)
     pclient_t       *pc;
 
     // Allocate new client
-    if (!(pc = calloc(sizeof(*pc), 1))) {
-        LOGEM("Failed to add client -- malloc failed");
-        return false;
-    }
+    pc = CALLOC(sizeof(*pc), 1);
 
     // Setup EV IO Watcher
     pc->fd = fd;
@@ -140,7 +138,7 @@ void pl2rld_client_remove(pclient_t *pc)
     ds_dlist_remove(&pl2rld_clients, pc);
 
     // Free client
-    free(pc);
+    FREE(pc);
 
     return;
 }

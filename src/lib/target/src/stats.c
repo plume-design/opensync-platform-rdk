@@ -34,9 +34,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "target.h"
 #include "target_internal.h"
+#include "memutil.h"
 
 #define MODULE_ID LOG_MODULE_ID_OSA
-
+#define RADIO_MAX_DEVICE_QTY       3
 #define STATS_SCAN_MAX_RECORDS     300
 
 static struct {
@@ -142,23 +143,12 @@ static radio_chanwidth_t phymode_to_chanwidth(char *phymode)
 
 static inline stats_survey_record_t* stats_survey_record_alloc()
 {
-    stats_survey_record_t *record = NULL;
-
-    record = malloc(sizeof(stats_survey_record_t));
-    if (record != NULL)
-    {
-        memset(record, 0, sizeof(stats_survey_record_t));
-    }
-
-    return record;
+    return CALLOC(1, sizeof(stats_survey_record_t));
 }
 
 static inline void stats_survey_record_free(stats_survey_record_t *record)
 {
-    if (record != NULL)
-    {
-        free(record);
-    }
+    FREE(record);
 }
 
 int stats_mcs_nss_bw_to_dpp_index(int mcs, int nss, int bw)
@@ -175,18 +165,21 @@ int stats_mcs_nss_bw_to_dpp_index(int mcs, int nss, int bw)
 static bool radio_entry_to_hal_radio_index(radio_entry_t *radio_cfg, int *radioIndex)
 {
     INT ret;
-    ULONG r, rnum;
+    ULONG r;
     char radio_ifname[128];
+    wifi_hal_capability_t cap;
 
-    ret = wifi_getRadioNumberOfEntries(&rnum);
+    memset(&cap, 0, sizeof(cap));
+
+    ret = wifi_getHalCapability(&cap);
     if (ret != RETURN_OK)
     {
-        LOGE("%s: Failed to get radio count", __func__);
+        LOGE("%s: failed to get HAL capabilities", __func__);
         return false;
     }
 
     *radioIndex = -1;
-    for (r = 0; r < rnum; r++)
+    for (r = 0; r < cap.wifi_prop.numRadios; r++)
     {
         memset(radio_ifname, 0, sizeof(radio_ifname));
         ret = wifi_getRadioIfName(r, radio_ifname);
@@ -267,20 +260,17 @@ static int auto_rssi_to_above_noise_floor(int rssi)
 
 static void stats_client_record_free(stats_client_record_t *client_entry)
 {
-    if (client_entry != NULL)
-    {
-        free(client_entry);
-    }
+    FREE(client_entry);
 }
 
 static stats_client_record_t* stats_client_record_alloc()
 {
-    return calloc(1, sizeof(stats_client_record_t));
+    return CALLOC(1, sizeof(stats_client_record_t));
 }
 
 static bool stats_client_fetch(
         radio_entry_t              *radio_cfg,
-        radio_essid_t              *essid,
+        char                       *essid,
         ds_dlist_t                 *client_list,
         int                         radioIndex,
         int                         apIndex,
@@ -298,7 +288,7 @@ static bool stats_client_fetch(
     client_entry->info.type = radio_cfg->type;
     memcpy(&client_entry->info.mac, assoc_dev->cli_MACAddress, sizeof(client_entry->info.mac));
     STRLCPY(client_entry->info.ifname, apName);
-    STRLCPY(client_entry->info.essid, *essid);
+    STRLCPY(client_entry->info.essid, essid);
     dpp_mac_to_str(assoc_dev->cli_MACAddress, mac_str);
 
     // STATS
@@ -329,16 +319,16 @@ bool stats_clients_get(
         radio_essid_t              *essid,
         ds_dlist_t                 *client_list)
 {
-    radio_essid_t ssid_name;
     wifi_associated_dev3_t *client_array;
     UINT client_num;
     int ret;
     int i;
     INT radio_index;
-    INT ssid_radio_index;
-    ULONG s, snum;
-    char ssid_ifname[128];
-    BOOL enabled = false;
+    ULONG s;
+    wifi_vap_info_map_t map;
+    wifi_vap_info_t *vap_info;
+
+    memset(&map, 0, sizeof(wifi_vap_info_map_t));
 
     if (!radio_entry_to_hal_radio_index(radio_cfg, &radio_index))
     {
@@ -346,79 +336,51 @@ bool stats_clients_get(
         return false;
     }
 
-    ret = wifi_getSSIDNumberOfEntries(&snum);
-    if (ret != RETURN_OK)
+    if (wifi_getRadioVapInfoMap(radio_index, &map) != RETURN_OK)
     {
-        LOGE("%s: failed to get SSID count", __func__);
+        LOGE("%s: cannot get vap info map for radio index = %d", __func__, radio_index);
         return false;
     }
 
-    for (s = 0; s < snum; s++)
+    for (s = 0; s < map.num_vaps; s++)
     {
-        ret = wifi_getSSIDEnable(s, &enabled);
-        if (ret != RETURN_OK)
+        vap_info = &map.vap_array[s];
+        if (vap_info->u.bss_info.enabled == false)
         {
-            LOGW("%s: failed to get SSID enabled state for index %lu. Skipping", __func__, s);
+            // Filter-out ifaces that are not enabled
             continue;
         }
 
-        // Silently skip ifaces that are not enabled
-        if (enabled == false) continue;
-
-        memset(ssid_ifname, 0, sizeof(ssid_ifname));
-        ret = wifi_getApName(s, ssid_ifname);
-        if (ret != RETURN_OK)
+        if (!vap_controlled(vap_info->vap_name))
         {
-            LOGE("%s: cannot get ap name for index %ld", __func__, s);
+            // Filter-out VAPs that are not controlled by OpenSync
             continue;
         }
 
-        // Silentely skip VAPs that are not controlled by OpenSync
-        if (!vap_controlled(ssid_ifname)) continue;
-
-        ret = wifi_getSSIDRadioIndex(s, &ssid_radio_index);
-        if (ret != RETURN_OK)
+        if (essid && strcmp(*essid, vap_info->u.bss_info.ssid))
         {
-            LOGE("%s: cannot get radio index for SSID %s\n", __func__,
-                    ssid_ifname);
-            continue;
-        }
-
-        if (radio_index != ssid_radio_index)
-        {
-            continue;
-        }
-
-        ret = wifi_getSSIDNameStatus(s, ssid_name);
-        if (ret != RETURN_OK)
-        {
-           LOGE("%s: cannot get SSID name status for %s", __func__, ssid_ifname);
-           continue;
-        }
-
-        if (essid && strcmp(*essid, ssid_name))
-        {
+           // Filter-out VAPs not matching the SSID name
            continue;
         }
 
         client_array = NULL;
         client_num = 0;
-        ret = wifi_getApAssociatedDeviceDiagnosticResult3(s, &client_array, &client_num);
+        ret = wifi_getApAssociatedDeviceDiagnosticResult3(vap_info->vap_index, &client_array, &client_num);
         if (ret != RETURN_OK)
         {
-            LOGW("%s %s %ld %s: fetch client list",
-                 radio_cfg->phy_name, ssid_ifname, s, ssid_name);
+            LOGW("%s %s %u %s: fetch client list",
+                 radio_cfg->phy_name, vap_info->vap_name, vap_info->vap_index, vap_info->u.bss_info.ssid);
             continue;
         }
 
-        LOGT("%s %s %ld %s: fetch client list: %d clients",
-             radio_cfg->phy_name, ssid_ifname, s, ssid_name, client_num);
+        LOGT("%s %s %u %s: fetch client list: %d clients",
+             radio_cfg->phy_name, vap_info->vap_name, vap_info->vap_index, vap_info->u.bss_info.ssid, client_num);
 
         for (i = 0; i < (int)client_num; i++)
         {
             stats_client_fetch(
-                    radio_cfg, &ssid_name, client_list,
-                    radio_index, s, ssid_ifname, &client_array[i]);
+                    radio_cfg, vap_info->u.bss_info.ssid, client_list,
+                    radio_index, vap_info->vap_index, vap_info->vap_name, &client_array[i]);
         }
 
         free(client_array);
@@ -558,13 +520,6 @@ bool stats_survey_get(
     for (i = 0; i < (int)survey_data.num_chan; i++)
     {
         survey_record = stats_survey_record_alloc();
-        if (survey_record == NULL)
-        {
-            LOGE("Processing %s %s survey report (Failed to allocate memory)",
-                 radio_get_name_from_type(radio_cfg->type),
-                 radio_get_scan_name_from_type(scan_type));
-            return false;
-        }
 
         if (scan_type == RADIO_SCAN_TYPE_ONCHAN)
         {
@@ -642,12 +597,11 @@ bool stats_survey_convert(
 
 #define PERCENT(v1, v2) (v2 > 0 ? (v1*100/v2) : 0)
 
-#define DELTA_TYPE(TYPE, NEW, OLD) (STATS_CUMULATIVE_##TYPE ? (NEW - OLD) : NEW)
+#define DELTA_TYPE(TYPE, NEW, OLD) (CONFIG_RDK_CUMULATIVE_##TYPE ? (NEW - OLD) : NEW)
 #define XDELTA_TYPE(TYPE, F) DELTA_TYPE(TYPE, data_new->stats.F, data_old->stats.F)
 
 #define XDELTA_ONCHAN(F)  XDELTA_TYPE(SURVEY_ONCHAN, F)
 #define XDELTA_OFFCHAN(F) XDELTA_TYPE(SURVEY_OFFCHAN, F)
-
 
     if (scan_type == RADIO_SCAN_TYPE_ONCHAN)
     {
@@ -733,44 +687,43 @@ static bool stats_scan_initiate(
     char buf[1024];
     char tmp[32];
     int ret;
-    ULONG s, snum;
-    char ssid_ifname[128];
-    BOOL enabled;
+    ULONG s;
+    INT radio_index;
+    wifi_vap_info_map_t map;
+    wifi_vap_info_t *vap_info;
 
-    memset(ssid_ifname, 0, sizeof(ssid_ifname));
-    ret = wifi_getSSIDNumberOfEntries(&snum);
-    if (ret != RETURN_OK)
+    memset(&map, 0, sizeof(wifi_vap_info_map_t));
+
+    if (!radio_entry_to_hal_radio_index(radio_cfg, &radio_index))
     {
-        LOGE("%s: failed to get SSID count", __func__);
+        LOGE("%s: radio not found: %s", __func__, radio_cfg->phy_name);
         return false;
     }
 
-    for (s = 0; s < snum; s++)
+    if (wifi_getRadioVapInfoMap(radio_index, &map) != RETURN_OK)
     {
-        ret = wifi_getSSIDEnable(s, &enabled);
-        if (ret != RETURN_OK)
+        LOGE("%s: cannot get vap info map for radio index = %d", __func__, radio_index);
+        return false;
+    }
+
+    for (s = 0; s < map.num_vaps; s++)
+    {
+        vap_info = &map.vap_array[s];
+        if (vap_info->u.bss_info.enabled == false)
         {
-            LOGW("%s: failed to get SSID enabled state for index %lu. Skipping", __func__, s);
+            // Filter-out ifaces that are not enabled
             continue;
         }
 
-        // Silently skip ifaces that are not enabled
-        if (enabled == false) continue;
-
-        memset(ssid_ifname, 0, sizeof(ssid_ifname));
-        ret = wifi_getApName(s, ssid_ifname);
-        if (ret != RETURN_OK)
+        if (!vap_controlled(vap_info->vap_name))
         {
-            LOGE("%s: cannot get ap name for index %ld", __func__, s);
+            // Filter-out VAPs that are not controlled by OpenSync
             continue;
         }
 
-        // Silentely skip VAPs that are not controlled by OpenSync
-        if (!vap_controlled(ssid_ifname)) continue;
-
-        if (!strcmp(ssid_ifname, radio_cfg->if_name))
+        if (!strcmp(vap_info->vap_name, radio_cfg->if_name))
         {
-            apIndex = s;
+            apIndex = vap_info->vap_index;
             break;
         }
     }
@@ -1107,15 +1060,6 @@ static bool stats_scan_extract_neighbors_from_ssids(
         }
 
         neighbor = dpp_neighbor_record_alloc();
-        if (neighbor == NULL)
-        {
-            LOG(ERR,
-                "Parsing %s %s interface neighbor stats "
-                "(Failed to allocate memory)",
-                radio_get_name_from_type(radio_type),
-                radio_get_scan_name_from_type(scan_type));
-            return false;
-        }
         neighbor_entry = &neighbor->entry;
 
         memcpy (neighbor_entry,
@@ -1199,93 +1143,6 @@ bool stats_scan_get(
             radio_get_name_from_type(radio_type),
             radio_get_scan_name_from_type(scan_type),
             chan_list[0]);
-
-    return true;
-}
-
-
-/******************************************************************************
- *  CAPACITY
- *****************************************************************************/
-
-bool stats_capacity_get(
-        radio_entry_t              *radio_cfg,
-        stats_capacity_data_t      *capacity_result)
-{
-    int ret;
-    INT radio_index;
-    INT ssid_radio_index;
-    ULONG s, snum;
-    char ssid_ifname[128];
-    BOOL enabled;
-
-    memset(capacity_result, 0, sizeof(*capacity_result));
-
-    if (!radio_entry_to_hal_radio_index(radio_cfg, &radio_index))
-    {
-        LOGE("%s: radio not found: %s", __func__, radio_cfg->phy_name);
-        return false;
-    }
-
-    ret = wifi_getSSIDNumberOfEntries(&snum);
-    if (ret != RETURN_OK)
-    {
-        LOGE("%s: failed to get SSID count", __func__);
-        return false;
-    }
-
-    for (s = 0; s < snum; s++)
-    {
-
-        ret = wifi_getSSIDEnable(s, &enabled);
-        if (ret != RETURN_OK)
-        {
-            LOGW("%s: failed to get SSID enabled state for index %lu. Skipping", __func__, s);
-            continue;
-        }
-
-        // Silently skip ifaces that are not enabled
-        if (enabled == false) continue;
-        memset(ssid_ifname, 0, sizeof(ssid_ifname));
-
-        ret = wifi_getApName(s, ssid_ifname);
-        if (ret != RETURN_OK)
-        {
-            LOGE("%s: cannot get ap name for index %ld", __func__, s);
-            continue;
-        }
-
-        // Silentely skip VAPs that are not controlled by OpenSync
-        if (!vap_controlled(ssid_ifname)) continue;
-
-        ret = wifi_getSSIDRadioIndex(s, &ssid_radio_index);
-        if (ret != RETURN_OK)
-        {
-            LOGE("%s: cannot get radio index for SSID %s\n", __func__,
-                    ssid_ifname);
-            continue;
-        }
-
-        if (radio_index != ssid_radio_index)
-        {
-            continue;
-        }
-
-        wifi_ssidTrafficStats2_t ssid_stats;
-        ret = wifi_getSSIDTrafficStats2(s, &ssid_stats);
-        if (ret != RETURN_OK) return false;
-        capacity_result->bytes_tx += ssid_stats.ssid_BytesSent;
-    }
-
-    wifi_channelStats_t chan_stats;
-    chan_stats.ch_number = radio_cfg->chan;
-    // num 0 means onchan (bss)
-    ret = wifi_getRadioChannelStats(radio_index, &chan_stats, 0);
-    if (ret != RETURN_OK) return false;
-    capacity_result->chan_active = chan_stats.ch_utilization_total;
-    capacity_result->chan_tx = chan_stats.ch_utilization_busy_tx;
-
-    // capacity queue util not used anymore
 
     return true;
 }
@@ -1619,112 +1476,10 @@ bool target_stats_scan_get(
     return true;
 }
 
-
-/******************************************************************************
- *  DEVICE definitions
- *****************************************************************************/
-
-// not supported
-
-
-/******************************************************************************
- *  CAPACITY definitions
- *****************************************************************************/
-
-bool target_stats_capacity_enable(
-        radio_entry_t              *radio_cfg,
-        bool                        enabled)
-{
-#if defined USE_CAPACITY_QUEUE_STATS
-#error CAPACITY_QUEUE_STATS obsolete
-#endif
-    return true;
-}
-
 bool target_stats_capacity_get(
         radio_entry_t              *radio_cfg,
         target_capacity_data_t     *capacity_new)
 {
-#if defined USE_CAPACITY_QUEUE_STATS
-    radio_entry_t *radio_cfg_ctx = NULL;
-    bool ret;
-
-    radio_cfg_ctx = target_radio_config_map(radio_cfg);
-    if (radio_cfg_ctx == NULL)
-    {
-        return false;
-    }
-
-    ret = stats_capacity_get(radio_cfg_ctx, capacity_new);
-    if (!ret)
-    {
-        LOG(ERR, "Processing %s capacity",
-                 radio_get_name_from_type(radio_cfg->type));
-        return false;
-    }
-#endif
-
-    return true;
-}
-
-bool target_stats_capacity_convert(
-        target_capacity_data_t     *capacity_new,
-        target_capacity_data_t     *capacity_old,
-        dpp_capacity_record_t      *capacity_entry)
-{
-#if defined USE_CAPACITY_QUEUE_STATS
-    target_capacity_data_t  capacity_delta;
-    int32_t                 queue_index = 0;
-
-    // Calculate time deltas and derive percentage per sample
-
-    memset(&capacity_delta, 0, sizeof(capacity_delta));
-
-#define STATS_DELTA(n, o) (n - o)
-    capacity_delta.chan_active =
-        STATS_DELTA(
-                capacity_new->chan_active,
-                capacity_old->chan_active);
-
-    capacity_delta.chan_tx =
-        STATS_DELTA(
-                capacity_new->chan_tx,
-                capacity_old->chan_tx);
-
-    for (queue_index = 0; queue_index < RADIO_QUEUE_MAX_QTY; queue_index++)
-    {
-        capacity_delta.queue[queue_index] =
-            STATS_DELTA(
-                    capacity_new->queue[queue_index],
-                    capacity_old->queue[queue_index]);
-    }
-
-#define STATS_PERCENT(v1, v2) \
-        (v2 > 0 ? (v1*100/v2) : 0)
-
-    capacity_entry->busy_tx =
-        STATS_PERCENT(
-                capacity_delta.chan_tx,
-                capacity_delta.chan_active);
-
-    capacity_entry->bytes_tx =
-        STATS_DELTA(
-                capacity_new->bytes_tx,
-                capacity_old->bytes_tx);
-
-    capacity_entry->samples =
-        STATS_DELTA(
-                capacity_new->samples,
-                capacity_old->samples);
-
-    for (queue_index = 0; queue_index < RADIO_QUEUE_MAX_QTY; queue_index++)
-    {
-        capacity_entry->queue[queue_index] =
-            STATS_PERCENT(
-                    capacity_delta.queue[queue_index],
-                    capacity_entry->samples);
-    }
-#endif
-
-    return true;
+    // Not used
+    return false;
 }

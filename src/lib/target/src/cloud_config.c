@@ -27,7 +27,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target.h"
 #include "target_internal.h"
 #include "log.h"
-#include "devinfo.h"
+#include "dmcli.h"
 
 typedef void (*devconf_cb_t)(
         struct schema_AWLAN_Node *awlan,
@@ -42,7 +42,7 @@ void cloud_config_mode_init(void)
 
     memset(buf, 0, sizeof(buf));
 
-    if (!devinfo_getv(DEVINFO_MESH_STATE, ARRAY_AND_SIZE(buf)))
+    if (!dmcli_eRT_getv(DMCLI_ERT_MESH_STATE, ARRAY_AND_SIZE(buf), false))
     {
         LOGE("Failed to initialize cloud mode");
         return;
@@ -82,7 +82,7 @@ static bool update_redirector_addr(void)
     memset(&awlan, 0, sizeof(awlan));
     schema_filter_init(&filter, "+");
 
-    if (!devinfo_getv(DEVINFO_MESH_URL, buf, sizeof(buf)))
+    if (!dmcli_eRT_getv(DMCLI_ERT_MESH_URL, ARRAY_AND_SIZE(buf), false))
     {
         LOGW("### Failed to get redirector address, using default ###");
         memset(buf, 0, sizeof(buf));
@@ -106,9 +106,12 @@ bool target_device_config_register(void *devconf_cb)
 
     memset(buf, 0, sizeof(buf));
 
-    if (devinfo_getv(DEVINFO_MESH_STATE, ARRAY_AND_SIZE(buf)))
+#ifdef CONFIG_RDK_EXTENDER
+    cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_CLOUD);
+#else
+    if (dmcli_eRT_getv(DMCLI_ERT_MESH_STATE, ARRAY_AND_SIZE(buf), false))
     {
-        if (!strncmp(buf, "full", 4) || !strncmp(buf, "Full", 4))
+        if (!strncasecmp(buf, "Full", sizeof(buf)))
         {
             cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_CLOUD);
         }
@@ -117,6 +120,6 @@ bool target_device_config_register(void *devconf_cb)
             cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_MONITOR);
         }
     }
-
+#endif
     return update_redirector_addr();
 }

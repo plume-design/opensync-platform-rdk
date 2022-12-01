@@ -24,9 +24,24 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#
-# This script is called by various managers for fatal restart
-KCONFIG_ENV_FILE=$(dirname $(dirname "$(readlink -f "$0")"))/etc/kconfig
-. "$KCONFIG_ENV_FILE"
 
-$CONFIG_TARGET_PATH_SCRIPTS/managers.init opensync-restart < /dev/null > /dev/null 2>&1 &
+#
+# Compare Wifi_VIF_Config and Wifi_VIF_State to spot differences
+#
+
+OVSH=/usr/opensync/tools/ovsh
+
+ifnames=$($OVSH s Wifi_VIF_Config if_name -r)
+for param in $($OVSH s Wifi_VIF_Config -T | sed -n '2,+0p' | sed "s/|//g"); do
+    if [ "$param" == "_uuid" ] || [ "$param" == "_version" ]; then
+        continue
+    fi
+
+    for ifname in $ifnames; do
+        config_value=$($OVSH s Wifi_VIF_Config -w if_name==$ifname $param -r)
+        state_value=$($OVSH s Wifi_VIF_State -w if_name==$ifname $param -r 2>/dev/null)
+        if [ "$config_value" != "[\"set\",[]]" ] && [ "$config_value" != "[\"map\",[]]" ] && [ "$config_value" != "$state_value" ]; then
+            echo "if_name = $ifname, param=$param, config_value=$config_value, state_value=$state_value"
+        fi
+    done
+done

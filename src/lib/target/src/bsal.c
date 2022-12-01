@@ -33,6 +33,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "bm_ieee80211.h"
 #endif
 
+#include <errno.h>
+
 /*****************************************************************************/
 
 #define WIFI_HAL_STR_LEN  64
@@ -427,63 +429,14 @@ static bool lookup_ifname(
         const bsal_ifconfig_t *ifcfg,
         iface_t *iface)
 {
-    CHAR buf[WIFI_HAL_STR_LEN];
-    ULONG snum;
-    UINT s;
+    INT s;
     INT radio_index;
     int ret;
-    BOOL enabled = false;
     wifi_radio_operationParam_t radio_params;
 
-    ret = wifi_getSSIDNumberOfEntries(&snum);
-    if (ret != RETURN_OK)
+    if (vif_ifname_to_idx(ifcfg->ifname, &s) == false)
     {
-        LOGE("BSAL Unable to get number of VAPs (wifi_getSSIDNumberOfEntries() failed with code %d)",
-             ret);
-        goto error;
-    }
-
-    if (snum == 0)
-    {
-        LOGE("BSAL No VAPs detected");
-        goto error;
-    }
-
-    for (s = 0; s < snum; s++)
-    {
-        ret = wifi_getSSIDEnable(s, &enabled);
-        if (ret != RETURN_OK)
-        {
-            LOGW("%s: failed to get SSID enabled state for index %d. Skipping", __func__, s);
-            continue;
-        }
-
-        // Silently skip ifaces that are not enabled
-        if (enabled == false) continue;
-
-        memset(buf, 0, sizeof(buf));
-        ret = wifi_getApName(s, buf);
-        if (ret != RETURN_OK)
-        {
-            LOGE("BSAL Failed to get ifname of VAO #%u (wifi_getApName() failed with code %d)",
-                 s, ret);
-            goto error;
-        }
-
-        // Silentely skip VAPs that are not controlled by OpenSync
-        if (!vap_controlled(buf)) continue;
-
-        if (strcmp(ifcfg->ifname, buf) != 0)
-        {
-            continue;
-        }
-
-        break;
-    }
-
-    if (s == snum)
-    {
-        LOGE("BSAL Radio with %s ifname was not found", ifcfg->ifname);
+        LOGE("BSAL unable to find vap index for %s", ifcfg->ifname);
         goto error;
     }
 
@@ -495,7 +448,6 @@ static bool lookup_ifname(
         goto error;
     }
 
-    memset(buf, 0, sizeof(buf));
     ret = wifi_getRadioOperatingParameters(radio_index, &radio_params);
     if (ret != RETURN_OK)
     {
@@ -716,7 +668,9 @@ int target_bsal_init(
         struct ev_loop *loop)
 {
     int ret;
-    ULONG rnum;
+    wifi_hal_capability_t cap;
+
+    memset(&cap, 0, sizeof(cap));
 
     if (_bsal_event_cb != NULL)
     {
@@ -727,14 +681,14 @@ int target_bsal_init(
     _bsal_event_cb = event_cb;
     memset(&group, 0, sizeof(group));
 
-    ret = wifi_getRadioNumberOfEntries(&rnum);
+    ret = wifi_getHalCapability(&cap);
     if (ret != RETURN_OK)
     {
-        LOGE("%s: failed to get radio count", __func__);
+        LOGE("%s: failed to get HAL capabilities", __func__);
         goto error;
     }
 
-    group.iface_number = rnum;
+    group.iface_number = cap.wifi_prop.numRadios;
     group.iface = calloc(group.iface_number, sizeof(iface_t));
     if (!group.iface)
     {
@@ -1205,6 +1159,8 @@ int target_bsal_rrm_beacon_report_request(
     unsigned char dia_token = 0;
     int ret = 0;
     mac_address_t mac = {0};
+    wifi_vap_info_map_t map;
+    wifi_vap_info_t *vap_info = NULL;
 
     iface = group_get_iface_by_name(ifname);
     if (iface == NULL)
@@ -1213,6 +1169,9 @@ int target_bsal_rrm_beacon_report_request(
              MAC_ADDR_UNPACK(mac_addr), ifname);
         goto error;
     }
+
+    memset(&map, 0, sizeof(map));
+    if (!ssid_index_to_vap_info((UINT)iface->wifihal_cfg.apIndex, &map, &vap_info)) goto error;
 
     memset(&req, 0, sizeof(req));
     req.opClass = rrm_params->op_class;
@@ -1224,7 +1183,8 @@ int target_bsal_rrm_beacon_report_request(
 
     if (rrm_params->req_ssid == 1)
     {
-        if (wifi_getSSIDName(iface->wifihal_cfg.apIndex, req.ssid) == RETURN_OK)
+        STRSCPY(req.ssid, vap_info->u.bss_info.ssid);
+        if (strlen(req.ssid) > 0)
         {
             req.ssidPresent = 1;
         }
@@ -1498,10 +1458,10 @@ int target_bsal_client_info(
     return 0;
 }
 
-static int bssid_ifname_cmp(void *_a, void *_b)
+static int bssid_ifname_cmp(const void *_a, const void *_b)
 {
-    bsal_neigh_key_t *a = _a;
-    bsal_neigh_key_t *b = _b;
+    const bsal_neigh_key_t *a = _a;
+    const bsal_neigh_key_t *b = _b;
     int rc;
 
     rc = memcmp(&a->bssid, &b->bssid, sizeof(a->bssid));
@@ -1656,3 +1616,9 @@ int target_bsal_rrm_remove_neighbor(const char *ifname, const bsal_neigh_info_t 
     return 0;
 }
 
+int target_bsal_client_measure(const char *ifname, const uint8_t *mac_addr,
+                               int num_samples)
+{
+    // BM will use last known SNR.
+    return -ENOSYS;
+}

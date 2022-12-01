@@ -51,6 +51,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "target.h"
 #include "target_internal.h"
+#include "memutil.h"
 
 /*
  * ===========================================================================
@@ -86,12 +87,12 @@ struct dhcp_range
 };
 
 /* IP range comparison function */
-int dhcp_range_cmp(void *_a, void *_b)
+int dhcp_range_cmp(const void *_a, const void *_b)
 {
     int rc;
 
-    struct dhcp_range *a = _a;
-    struct dhcp_range *b = _b;
+    const struct dhcp_range *a = _a;
+    const struct dhcp_range *b = _b;
 
     rc = osn_ip_addr_cmp(&a->dr_range_start, &b->dr_range_start);
     if (rc != 0) return rc;
@@ -124,16 +125,11 @@ static ev_stat      dhcp_lease_watcher;
  */
 osn_dhcp_server_t* osn_dhcp_server_new(const char *ifname)
 {
-    osn_dhcp_server_t *self = calloc(1, sizeof(osn_dhcp_server_t));
-    if (self == NULL)
-    {
-        LOGE("%s: Failed to allocate memory for new dhcp server", ifname);
-        return NULL;
-    }
+    osn_dhcp_server_t *self = CALLOC(1, sizeof(osn_dhcp_server_t));
 
     if (!dhcp_server_init(self, ifname))
     {
-        free(self);
+        FREE(self);
         return NULL;
     }
 
@@ -149,7 +145,7 @@ bool osn_dhcp_server_del(osn_dhcp_server_t *self)
     ds_tree_foreach_iter(&self->ds_range_list, dr, &iter)
     {
         ds_tree_iremove(&iter);
-        free(dr);
+        FREE(dr);
     }
 
     /* Remove the DHCP server object instance from the global list */
@@ -162,7 +158,7 @@ bool osn_dhcp_server_del(osn_dhcp_server_t *self)
         ev_debounce_stop(EV_DEFAULT, &dhcp_lease_init_debounce);
     }
 
-    free(self);
+    FREE(self);
 
     return true;
 }
@@ -204,12 +200,7 @@ bool osn_dhcp_server_range_add(osn_dhcp_server_t *self, osn_ip_addr_t start, osn
         return true;
     }
 
-    dr = calloc(1, sizeof(struct dhcp_range));
-    if (dr == NULL)
-    {
-        LOGE("Failed to allocate memory for new dhcp range");
-        return false;
-    }
+    dr = CALLOC(1, sizeof(struct dhcp_range));
     dr->dr_range_start = start;
     dr->dr_range_stop = stop;
     ds_tree_insert(&self->ds_range_list, dr, dr);
@@ -228,7 +219,7 @@ bool osn_dhcp_server_range_del(osn_dhcp_server_t *self, osn_ip_addr_t start, osn
 
     ds_tree_remove(&self->ds_range_list, dr);
 
-    free(dr);
+    FREE(dr);
 
     return true;
 }
@@ -318,7 +309,7 @@ static void dhcp_lease_clear(osn_dhcp_server_t *self)
 {
     if (self->ds_status.ds_leases != NULL)
     {
-        free(self->ds_status.ds_leases);
+        FREE(self->ds_status.ds_leases);
         self->ds_status.ds_leases = NULL;
     }
 
@@ -481,7 +472,7 @@ static void dhcp_server_lease_add(osn_dhcp_server_t *self, struct osn_dhcp_serve
     if ((st->ds_leases_len % DHCP_LEASE_RESIZE_QUANTUM) == 0)
     {
         /* Reallocate buffer */
-        st->ds_leases = realloc(
+        st->ds_leases = REALLOC(
                 st->ds_leases,
                 (st->ds_leases_len + DHCP_LEASE_RESIZE_QUANTUM) * sizeof(struct osn_dhcp_server_lease));
     }

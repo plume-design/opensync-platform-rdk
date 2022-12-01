@@ -72,24 +72,24 @@ Prerequisites:
  * Client supporting VHT
  * Client not supporting VHT
  * Client 2.4GHz only
- * Airlog sniffer for 2.4GHz and for 5GHz band
+ * Airlog sniffer for 2.4GHz/5GHz/6GHz(if supported) band
  * Controlled (deterministic) test environment, e.g. Test House or shield-room with programmable attenuators connected to clients.
  * All clients need to be able to be put into the pre-defined SNR conditions. The reference SNR can be measured using airlog sniffer
    (if SNR or NF + RSSI readings are available) or using reference router running OpenSync. Clients should be able to be put into
    SNR=10, SNR=30, SNR=45 versus Device Under Test (DUT) signal conditions.
  * The Home-APs must support BTM and RRM capabilities. To ensure those are enabled, you can use
-   "bs_cmd wifi_setBSSTransitionActivation <AP INDEX> 1" and "bs_cmd wifi_setNeighborReportActivation <AP_INDEX> 1"
+   "bs_cmd bssTransitionActivated <AP_INDEX> 1" and "bs_cmd nbrReportActivated <AP_INDEX> 1"
 
 Test configuration:
- * Prepare MAC addresses of all the clients, the 2.4G DUT Home-AP and the 5G DUT Home-AP.
+ * Prepare MAC addresses of all the clients, the 2.4G DUT Home-AP, the 5G DUT Home-AP and 6G DUT Home-AP.
  * Modify the MAC addresses of neighbor APs in inputs/BTM_REQEUST.in file (bssid field for each candidate). The first
    candidate's bssid should be a bssid of AP to which STA should be steered (eg. 5G DUT Home-AP MAC). This will be
    modified during tests as well. The second bssid can be any MAC (it is needed only to verify if more than one
    candidate is included correctly in the BTM frame).
  * Modify the action.sh script - set correct IP and PORT when using remote access (you can leave it unchanged if running both tools
-   directly on target), set CLIENT_MAC field and update the AP_INDEX_24 and AP_INDEX_5 fields to reflect actual AP indices used by
-   Wifi HAL (eg. 0 for 2.4G & 8 for 5G).
- * Modify "apIndex" field in inputs/AP_CFG_2.in and inputs/AP_CFG_5.in with actual AP index used by Wifi HAL.
+   directly on target), set CLIENT_MAC field and update the AP_INDEX_24, AP_INDEX_5 and AP_INDEX_6 fields to reflect actual AP indices
+   used by Wifi HAL (eg. 0 for 2.4G & 8 for 5G).
+ * Modify "apIndex" field in inputs/AP_CFG_2, inputs/AP_CFG_5 and inputs/AP_CFG_6, in with actual AP index used by Wifi HAL.
  * Run bs_testd on the DUT. The preferred way is to run it with -b and -s options so it can be orchestrated remotely.
    Example: ./bs_testd -B -b 10.129.4.33:5559 -s 192.168.1.1:5558 > /dev/null (you need to adjust IP addresses to your network
    setup)
@@ -249,7 +249,7 @@ Steps:
  4. Stop network traffic, wait 60 seconds
  5. Start network traffic > 2000bps, for example iperf, or wget <external test server> for 30 seconds
  6. Stop network traffic, wait 60 seconds
- 7. Repeat (one-time) steps 2-6 but on 5GHz band
+ 7. Repeat (one-time) steps 2-6 but on 5GHz/6GHz band
  8. ./action.sh cleanup
 
 Corresponding pass criteria for each step:
@@ -259,7 +259,7 @@ Corresponding pass criteria for each step:
  4. ACTIVITY (active=false) event reported.
  5. ACTIVITY (active=true) event reported
  6. ACTIVITY (active=false) event reported.
- 7. Same as 2-6 but on 5GHz band
+ 7. Same as 2-6 but on 5GHz/6GHz band
  8. No errors
 
 
@@ -277,7 +277,7 @@ Steps:
  8. ./bs_cmd [-s ip:port] wifi_steering_clientMeasure 0 <2.4GHz AP INDEX> <CLIENT MAC>
  9. Move Client STA to SNR=10
  10. ./bs_cmd [-s ip:port] wifi_steering_clientMeasure 0 <2.4GHz AP INDEX> <CLIENT MAC>
- 11. Repeat (one-time) steps 2-10 but on 5GHz band
+ 11. Repeat (one-time) steps 2-10 but on 5GHz/6GHz band
  12. ./action.sh cleanup
 
 Corresponding pass criteria for each step:
@@ -291,7 +291,7 @@ Corresponding pass criteria for each step:
  8. EVENT_RSSI event with SNR=45 (+/-3) received
  9. Client in SNR=10 conditions
  10. EVENT_RSSI event with SNR=10 (+/-3) received
- 11. Same as 2-10 but on 5GHz band
+ 11. Same as 2-10 but on 5GHz/6GHz band
  12. No errors
 
 Test 9 - Remove client configuration

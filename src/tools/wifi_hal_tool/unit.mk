@@ -38,3 +38,4 @@ UNIT_TYPE := BIN
 
 UNIT_CFLAGS := -I$(VENDOR_DIR)/src/lib/target/inc
 UNIT_SRC := wifi_hal_tool.c
+UNIT_DEPS := src/lib/common

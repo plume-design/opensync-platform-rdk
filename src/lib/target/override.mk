@@ -49,11 +49,12 @@ UNIT_SRC_TOP += $(UNIT_SRC_DIR)/cloud_config.c
 UNIT_SRC_TOP += $(if $(CONFIG_RDK_WPS_SUPPORT), $(UNIT_SRC_DIR)/wps.c)
 UNIT_SRC_TOP += $(if $(CONFIG_RDK_MULTI_AP_SUPPORT), $(UNIT_SRC_DIR)/multi_ap.c)
 
+UNIT_CFLAGS  := $(filter-out -DTARGET_H=%,$(UNIT_CFLAGS))
 UNIT_CFLAGS  += -I$(OVERRIDE_DIR)/inc
 UNIT_CFLAGS  += -DENABLE_MESH_SOCKETS
 UNIT_CLFAGS  += -DTARGET_H=\"target_RDKB.h\"
 
-UNIT_DEPS    += $(PLATFORM_DIR)/src/lib/devinfo
+UNIT_DEPS    += $(PLATFORM_DIR)/src/lib/dmcli
 UNIT_DEPS    += src/lib/schema
 UNIT_DEPS    += src/lib/const
 UNIT_DEPS    += src/lib/osp

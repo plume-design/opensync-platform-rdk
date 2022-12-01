@@ -37,3 +37,5 @@ UNIT_DIR := tools/band_steering_test
 UNIT_TYPE := BIN
 
 UNIT_SRC := bs_testd.c
+
+UNIT_CFLAGS  += -I$(TOP_DIR)/src/lib/common/inc -I$(TOP_DIR)/src/lib/osa/inc

@@ -50,7 +50,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "const.h"
 #include "target.h"
 #include "target_internal.h"
-#include "devinfo.h"
 
 #ifndef __WIFI_HAL_H__
 #include <ccsp/wifi_hal.h>

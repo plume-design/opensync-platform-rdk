@@ -31,6 +31,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "target.h"
 #include "target_internal.h"
+#include "memutil.h"
 
 #ifndef __WIFI_HAL_H__
 #include <ccsp/wifi_hal.h>
@@ -67,11 +68,7 @@ INT wps_hal_cb(INT ssid_index, wifi_wps_t event)
         goto exit;
     }
 
-    if ((cbe = calloc(1, sizeof(*cbe))) == NULL)
-    {
-        LOGE("%s: Failed to allocate memory!", __func__);
-        goto exit;
-    }
+    cbe = CALLOC(1, sizeof(*cbe));
     cbe->ssid_index = ssid_index;
     cbe->event = event;
 
@@ -154,7 +151,7 @@ static void wps_hal_async_cb(EV_P_ ev_async *w, int revents)
         if (wifi_getApName(cbe->ssid_index, ifname) != RETURN_OK)
         {
             LOGE("%s: cannot get AP name for index %d", __func__, cbe->ssid_index);
-            free(cbe);
+            FREE(cbe);
             cbe = ds_dlist_inext(&qiter);
             continue;
         }
@@ -173,7 +170,7 @@ static void wps_hal_async_cb(EV_P_ ev_async *w, int revents)
                 break;
         }
 
-        free(cbe);
+        FREE(cbe);
         cbe = ds_dlist_inext(&qiter);
     }
     pthread_mutex_unlock(&hal_cb_wps_lock);
