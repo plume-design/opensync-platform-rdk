@@ -96,8 +96,10 @@ static void handle_wifi_getApAssociatedDeviceStats(int number_of_params, char **
 static void handle_wifi_getApAssociatedDeviceDiagnosticResult3(int number_of_params, char **params);
 static void handle_wifi_getApAssociatedDeviceRxStatsResult(int number_of_params, char **params);
 static void handle_wifi_getApAssociatedDeviceTxStatsResult(int number_of_params, char **params);
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
 static void handle_wifi_pushMultiPskKeys(int number_of_params, char **params);
 static void handle_wifi_getMultiPskKeys(int number_of_params, char **params);
+#endif
 static void handle_wifi_getRadioVapInfoMap(int number_of_params, char **params);
 static void handle_wifi_createVAP(int number_of_params, char **params);
 static void handle_wifi_getRadioOperatingParameters(int number_of_params, char **params);
@@ -131,8 +133,10 @@ static command_t commands_map[] = {
     { "wifi_getApAssociatedDeviceDiagnosticResult3", "apIndex", handle_wifi_getApAssociatedDeviceDiagnosticResult3, false},
     { "wifi_getApAssociatedDeviceRxStatsResult", "radioIndex mac", handle_wifi_getApAssociatedDeviceRxStatsResult, false},
     { "wifi_getApAssociatedDeviceTxStatsResult", "radioIndex mac", handle_wifi_getApAssociatedDeviceTxStatsResult, false},
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
     { "wifi_pushMultiPskKeys", "apIndex numKeys PSK1 KeyId1 ... PSKN KeyIdN", handle_wifi_pushMultiPskKeys, true},
     { "wifi_getMultiPskKeys", "apIndex", handle_wifi_getMultiPskKeys, false},
+#endif
     { "wifi_getRadioVapInfoMap", "apIndex", handle_wifi_getRadioVapInfoMap, false},
     { "wifi_createVAP", "apIndex", handle_wifi_createVAP, false},
     { "handle_wifi_getRadioOperatingParameters", "radioIndex", handle_wifi_getRadioOperatingParameters, false},
@@ -813,7 +817,7 @@ static void handle_wifi_getApAssociatedDeviceTxStatsResult(int number_of_params,
 
     free(stats_tx);
 }
-
+#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
 static void handle_wifi_pushMultiPskKeys(int number_of_params, char **params)
 {
     INT ret;
@@ -883,7 +887,7 @@ static void handle_wifi_getMultiPskKeys(int number_of_params, char **params)
     }
     LOG("wifi_getMultiPskKeys(%d) OK ret=%d\n", (int)apIndex, ret);
 }
-
+#endif
 static bool get_vaps_map(wifi_radio_index_t index, wifi_vap_info_map_t *map)
 {
     INT ret;

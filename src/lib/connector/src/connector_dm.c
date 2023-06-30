@@ -43,6 +43,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "ovsdb_sync.h"
 #include "ovsdb_table.h"
 #include "schema.h"
+#include "kconfig.h"
 
 #include "connector_main.h"
 #include "connector_dm.h"
@@ -212,10 +213,11 @@ int connector_lan_br_config_push_rdk_dm(const struct schema_Wifi_Inet_Config *in
 {
     LOGI("Setting LAN interface/DHCP to RDK");
 
-#ifdef CONFIG_RDK_CONNECTOR_DHCP_SYNC_LAN_MANAGEMENT
-    if (inet->inet_addr_changed && !set_lan_management(inet))
-        return -1;
-#endif
+    if (kconfig_enabled(CONFIG_RDK_CONNECTOR_DHCP_SYNC_LAN_MANAGEMENT))
+    {
+        if (inet->inet_addr_changed && !set_lan_management(inet))
+            return -1;
+    }
 
     if (inet->dhcpd_changed && !set_dhcp_configuration(inet))
         return -1;

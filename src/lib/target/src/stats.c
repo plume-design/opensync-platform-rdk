@@ -35,6 +35,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target.h"
 #include "target_internal.h"
 #include "memutil.h"
+#include "kconfig.h"
 
 #define MODULE_ID LOG_MODULE_ID_OSA
 #define RADIO_MAX_DEVICE_QTY       3
@@ -1217,15 +1218,16 @@ bool target_is_interface_ready(char *if_name)
 
 bool target_is_radio_interface_ready(char *phy_name)
 {
-#ifdef QCA_WIFI
-    bool rc;
-
-    rc = os_nif_is_interface_ready(phy_name);
-    if (rc == false)
+    if (kconfig_enabled(QCA_WIFI))
     {
-        return false;
+        bool rc;
+
+        rc = os_nif_is_interface_ready(phy_name);
+        if (rc == false)
+        {
+            return false;
+        }
     }
-#endif /* QCA_WIFI */
 
     return true;
 }
@@ -1474,12 +1476,4 @@ bool target_stats_scan_get(
     }
 
     return true;
-}
-
-bool target_stats_capacity_get(
-        radio_entry_t              *radio_cfg,
-        target_capacity_data_t     *capacity_new)
-{
-    // Not used
-    return false;
 }

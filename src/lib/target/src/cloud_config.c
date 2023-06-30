@@ -28,6 +28,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target_internal.h"
 #include "log.h"
 #include "dmcli.h"
+#include "kconfig.h"
 
 typedef void (*devconf_cb_t)(
         struct schema_AWLAN_Node *awlan,
@@ -106,20 +107,23 @@ bool target_device_config_register(void *devconf_cb)
 
     memset(buf, 0, sizeof(buf));
 
-#ifdef CONFIG_RDK_EXTENDER
-    cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_CLOUD);
-#else
-    if (dmcli_eRT_getv(DMCLI_ERT_MESH_STATE, ARRAY_AND_SIZE(buf), false))
+    if (kconfig_enabled(CONFIG_RDK_EXTENDER))
     {
-        if (!strncasecmp(buf, "Full", sizeof(buf)))
+        cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_CLOUD);
+    }
+    else
+    {
+        if (dmcli_eRT_getv(DMCLI_ERT_MESH_STATE, ARRAY_AND_SIZE(buf), false))
         {
-            cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_CLOUD);
-        }
-        else
-        {
-            cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_MONITOR);
+            if (!strncasecmp(buf, "Full", sizeof(buf)))
+            {
+                cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_CLOUD);
+            }
+            else
+            {
+                cloud_config_set_mode(SCHEMA_CONSTS_DEVICE_MODE_MONITOR);
+            }
         }
     }
-#endif
     return update_redirector_addr();
 }

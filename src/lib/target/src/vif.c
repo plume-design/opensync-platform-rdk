@@ -40,6 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target_internal.h"
 #include "util.h"
 #include "memutil.h"
+#include "kconfig.h"
 
 #define MODULE_ID LOG_MODULE_ID_VIF
 #define MAX_MULTI_PSK_KEYS 30
@@ -254,13 +255,14 @@ static bool acl_to_state(
     INT           status = RETURN_ERR;
     const char    none_mac_list_type[] = "none";
 
-#ifndef CONFIG_RDK_SYNC_EXT_HOME_ACLS
-    // Don't obtain home AP ACLs
-    if (is_home_ap(vap_info->vap_name))
+    if (!kconfig_enabled(CONFIG_RDK_SYNC_EXT_HOME_ACLS))
     {
-        return true;
+        // Don't obtain home AP ACLs
+        if (is_home_ap(vap_info->vap_name))
+        {
+            return true;
+        }
     }
-#endif
 
     if (vap_info->u.bss_info.mac_filter_enable)
     {
@@ -544,13 +546,14 @@ static void acl_apply(
     const c_item_t               *citem = c_get_item_by_str(map_acl_modes, vconf->mac_list_type);
     const char                   none_mac_list_type[] = "none";
 
-#ifndef CONFIG_RDK_SYNC_EXT_HOME_ACLS
-    // Don't configure home AP ACLs
-    if (is_home_ap(vap_info->vap_name))
+    if (!kconfig_enabled(CONFIG_RDK_SYNC_EXT_HOME_ACLS))
     {
-        return;
+        // Don't configure home AP ACLs
+        if (is_home_ap(vap_info->vap_name))
+        {
+            return;
+        }
     }
-#endif
 
     // Set ACL type from mac_list_type
     if (changed->mac_list_type && vconf->mac_list_type_exists)
@@ -709,11 +712,9 @@ static bool get_psks(
         wifi_security_key_t key,
         struct schema_Wifi_VIF_State *vstate)
 {
-#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
     INT ret;
     wifi_key_multi_psk_t keys[MAX_MULTI_PSK_KEYS];
     int i;
-#endif
 
     if (strlen(key.key) == 0)
     {
@@ -722,25 +723,26 @@ static bool get_psks(
     }
 
     SCHEMA_KEY_VAL_APPEND(vstate->wpa_psks, cached_key_ids[ssid_index], key.key);
-#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
-    memset(keys, 0, sizeof(keys));
-    LOGT("wifi_getMultiPskKeys() index=%d", ssid_index);
-    ret = wifi_getMultiPskKeys(ssid_index, keys, MAX_MULTI_PSK_KEYS);
-    if (ret != RETURN_OK)
+    if (kconfig_enabled(CONFIG_RDK_MULTI_PSK_SUPPORT))
     {
-        LOGE("wifi_getMultiPskKeys() FAILED index=%d", ssid_index);
-        return false;
-    }
-    LOGT("wifi_getMultiPskKeys() OK index=%d", ssid_index);
+        memset(keys, 0, sizeof(keys));
+        LOGT("wifi_getMultiPskKeys() index=%d", ssid_index);
+        ret = wifi_getMultiPskKeys(ssid_index, keys, MAX_MULTI_PSK_KEYS);
+        if (ret != RETURN_OK)
+        {
+            LOGE("wifi_getMultiPskKeys() FAILED index=%d", ssid_index);
+            return false;
+        }
+        LOGT("wifi_getMultiPskKeys() OK index=%d", ssid_index);
 
-    for (i = 0; i < MAX_MULTI_PSK_KEYS; i++)
-    {
-         if (strlen(keys[i].wifi_keyId) && strlen(keys[i].wifi_psk))
-         {
-             SCHEMA_KEY_VAL_APPEND(vstate->wpa_psks, keys[i].wifi_keyId, keys[i].wifi_psk);
-         }
+        for (i = 0; i < MAX_MULTI_PSK_KEYS; i++)
+        {
+             if (strlen(keys[i].wifi_keyId) && strlen(keys[i].wifi_psk))
+             {
+                 SCHEMA_KEY_VAL_APPEND(vstate->wpa_psks, keys[i].wifi_keyId, keys[i].wifi_psk);
+             }
+        }
     }
-#endif
 
     return true;
 }
@@ -1377,13 +1379,15 @@ bool vif_ap_state_get(struct schema_Wifi_VIF_State *vstate, wifi_vap_info_t *vap
 
     get_security(vap_info->vap_index, vap_info, vstate);
     acl_to_state(vap_info, vstate);
-#ifdef CONFIG_RDK_WPS_SUPPORT
-    wps_to_state(vap_info->vap_index, vstate);
-#endif
+    if (kconfig_enabled(CONFIG_RDK_WPS_SUPPORT))
+    {
+        wps_to_state(vap_info->vap_index, vstate);
+    }
 
-#ifdef CONFIG_RDK_MULTI_AP_SUPPORT
-    multi_ap_to_state(vap_info->vap_index, vstate);
-#endif
+    if (kconfig_enabled(CONFIG_RDK_MULTI_AP_SUPPORT))
+    {
+        multi_ap_to_state(vap_info->vap_index, vstate);
+    }
 
     SCHEMA_SET_INT(vstate->mcast2ucast, vap_info->u.bss_info.mcast2ucast);
 
@@ -1483,43 +1487,44 @@ static bool set_password(
 {
     STRSCPY(vap_info->u.bss_info.security.u.key.key, vconf->wpa_psks[0]);
     STRSCPY(cached_key_ids[ssid_index], vconf->wpa_psks_keys[0]);
-#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
-    if (vconf->wpa_psks_len > 1)
+    if (kconfig_enabled(CONFIG_RDK_MULTI_PSK_SUPPORT))
     {
-        wifi_key_multi_psk_t *keys = NULL;
-        int i;
-        INT ret;
+        if (vconf->wpa_psks_len > 1)
+        {
+            wifi_key_multi_psk_t *keys = NULL;
+            int i;
+            INT ret;
 
-        keys = CALLOC(vconf->wpa_psks_len - 1, sizeof(wifi_key_multi_psk_t));
+            keys = CALLOC(vconf->wpa_psks_len - 1, sizeof(wifi_key_multi_psk_t));
 
-        for (i = 0; i < vconf->wpa_psks_len - 1; i++)
-        {
-            STRSCPY(keys[i].wifi_keyId, vconf->wpa_psks_keys[i + 1]);
-            STRSCPY(keys[i].wifi_psk, vconf->wpa_psks[i + 1]);
-            // MAC set to 00:00:00:00:00:00
+            for (i = 0; i < vconf->wpa_psks_len - 1; i++)
+            {
+                STRSCPY(keys[i].wifi_keyId, vconf->wpa_psks_keys[i + 1]);
+                STRSCPY(keys[i].wifi_psk, vconf->wpa_psks[i + 1]);
+                // MAC set to 00:00:00:00:00:00
+            }
+            LOGT("wifi_pushMultiPskKeys() index=%d", ssid_index);
+            ret = wifi_pushMultiPskKeys(ssid_index, keys, vconf->wpa_psks_len - 1);
+            FREE(keys);
+            if (ret != RETURN_OK)
+            {
+                LOGW("wifi_pushMultiPskKeys() FAILED index=%d", ssid_index);
+                return false;
+            }
+            LOGT("wifi_pushMultiPskKeys() OK index=%d", ssid_index);
         }
-        LOGT("wifi_pushMultiPskKeys() index=%d", ssid_index);
-        ret = wifi_pushMultiPskKeys(ssid_index, keys, vconf->wpa_psks_len - 1);
-        FREE(keys);
-        if (ret != RETURN_OK)
+        else
         {
-            LOGW("wifi_pushMultiPskKeys() FAILED index=%d", ssid_index);
-            return false;
+            // Clean multi-psk keys
+            INT ret;
+            ret = wifi_pushMultiPskKeys(ssid_index, NULL, 0);
+            if (ret != RETURN_OK)
+            {
+                LOGW("wifi_pushMultiPskKeys() FAILED index=%d (cleaning)", ssid_index);
+                return false;
+            }
         }
-        LOGT("wifi_pushMultiPskKeys() OK index=%d", ssid_index);
     }
-    else
-    {
-        // Clean multi-psk keys
-        INT ret;
-        ret = wifi_pushMultiPskKeys(ssid_index, NULL, 0);
-        if (ret != RETURN_OK)
-        {
-            LOGW("wifi_pushMultiPskKeys() FAILED index=%d (cleaning)", ssid_index);
-            return false;
-        }
-    }
-#endif
 
     return true;
 }
@@ -1912,24 +1917,26 @@ bool target_vif_config_set2(
         }
         vap_info->u.bss_info.showSsid = (BOOL)citem->key;
         trigger_reconfig = true;
-#ifndef CONFIG_RDK_DISABLE_SYNC
-        if (!sync_send_ssid_broadcast_change(ssid_index, vap_info->u.bss_info.showSsid))
+        if (!kconfig_enabled(CONFIG_RDK_DISABLE_SYNC))
         {
-            LOGW("%s: Failed to sync SSID Broadcast change to %s", vconf->if_name, vconf->ssid_broadcast);
+            if (!sync_send_ssid_broadcast_change(ssid_index, vap_info->u.bss_info.showSsid))
+            {
+                LOGW("%s: Failed to sync SSID Broadcast change to %s", vconf->if_name, vconf->ssid_broadcast);
+            }
         }
-#endif
     }
     if (changed->ssid)
     {
         STRSCPY(vap_info->u.bss_info.ssid, vconf->ssid);
         trigger_reconfig = true;
         LOGI("%s: SSID updated to '%s'", vconf->if_name, vconf->ssid);
-#ifndef CONFIG_RDK_DISABLE_SYNC
-        if (!sync_send_ssid_change(ssid_index, vconf->if_name, vconf->ssid))
+        if (!kconfig_enabled(CONFIG_RDK_DISABLE_SYNC))
         {
-            LOGE("%s: Failed to sync SSID change to '%s'", vconf->if_name, vconf->ssid);
+            if (!sync_send_ssid_change(ssid_index, vconf->if_name, vconf->ssid))
+            {
+                LOGE("%s: Failed to sync SSID change to '%s'", vconf->if_name, vconf->ssid);
+            }
         }
-#endif
     }
     if (changed->bridge)
     {
@@ -1939,13 +1946,15 @@ bool target_vif_config_set2(
 
     acl_apply(ssid_index, vconf, changed, &trigger_reconfig, vap_info);
 
-#ifdef CONFIG_RDK_WPS_SUPPORT
-    vif_config_set_wps(ssid_index, vconf, changed, rconf->if_name);
-#endif
+    if (kconfig_enabled(CONFIG_RDK_WPS_SUPPORT))
+    {
+        vif_config_set_wps(ssid_index, vconf, changed, rconf->if_name);
+    }
 
-#ifdef CONFIG_RDK_MULTI_AP_SUPPORT
-    vif_config_set_multi_ap(ssid_index, vconf->multi_ap, changed);
-#endif
+    if (kconfig_enabled(CONFIG_RDK_MULTI_AP_SUPPORT))
+    {
+        vif_config_set_multi_ap(ssid_index, vconf->multi_ap, changed);
+    }
 
     if (changed->mcast2ucast)
     {

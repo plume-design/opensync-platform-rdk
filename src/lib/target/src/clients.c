@@ -33,6 +33,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target.h"
 #include "target_internal.h"
 #include "memutil.h"
+#include "kconfig.h"
 
 #define MODULE_ID LOG_MODULE_ID_OSA
 
@@ -70,20 +71,64 @@ static int                  hal_cb_queue_len = 0;
 
 static struct target_radio_ops g_rops;
 
+
+typedef struct
+{
+    const char *security;
+    const char *wpa_key_mgmt;
+    const char *pairwise_cipher;
+} client_security_mode_map_t;
+
 static bool clients_update(
+        client_t *client,
         char *ifname,
-        const char *mac,
-        const char *key_id,
         bool connected)
 {
-    struct schema_Wifi_Associated_Clients       cschema;
+    // TODO: Currently wifihal does not provide API to get client security
+    // As temporary workaround AP security mode is used to make assumption
+    static client_security_mode_map_t csmm[] =
+    {
+        { "WEP-64",              NULL,      "wep" },
+        { "WEP-128",             NULL,      "wep" },
+        { "WPA-Personal",        "wpa-psk", "wpa-tkip" },
+        { "WPA-Enterprise",      "wpa-eap", "wpa-tkip" },
+        { "WPA2-Personal",       "wpa-psk", "rsn-ccmp" },
+        { "WPA2-Enterprise",     "wpa-eap", "rsn-ccmp" },
+        { "WPA-WPA2-Personal",   "wpa-psk", "rsn-ccmp" },
+        { "WPA-WPA2-Enterprise", "wpa-eap", "rsn-ccmp" }
+    };
+
+    struct schema_Wifi_Associated_Clients cschema;
+    char security[32] = {0};
 
     memset(&cschema, 0, sizeof(cschema));
     cschema._partial_update = true;
 
-    SCHEMA_SET_STR(cschema.mac, mac);
-    SCHEMA_SET_STR(cschema.key_id, key_id);
+    SCHEMA_SET_STR(cschema.mac, client->mac);
+    SCHEMA_SET_STR(cschema.key_id, client->key_id);
 
+    if (RETURN_OK != wifi_getApSecurityModeEnabled(client->apIndex, security))
+    {
+        LOGE("Cannot get security mode for index %d\n", client->apIndex);
+    }
+    else
+    {
+        for (size_t i = 0; i < sizeof(csmm) / sizeof(*csmm); i++)
+        {
+            if (0 == strcmp(csmm[i].security, security))
+            {
+                if (csmm[i].wpa_key_mgmt)
+                {
+                    SCHEMA_SET_STR(cschema.wpa_key_mgmt, csmm[i].wpa_key_mgmt);
+                }
+                if (csmm[i].pairwise_cipher)
+                {
+                    SCHEMA_SET_STR(cschema.pairwise_cipher, csmm[i].pairwise_cipher);
+                }
+                break;
+            }
+        }
+    }
     if (connected == true)
     {
         SCHEMA_SET_STR(cschema.state, "active");
@@ -139,14 +184,14 @@ static void clients_connection(
 
         LOGI("%s: Client '%s' connection moving from %s",
              ifname, client->mac, ifname_old);
-        clients_update(ifname_old, client->mac, client->key_id, false);
+        clients_update(client, ifname_old, false);
         client->apIndex = apIndex;
     }
     else if (strncmp(client->key_id, key_id, sizeof(client->key_id)) != 0)
     {
         LOGI("%s: Client '%s' key_id is changed from %s to %s",
             ifname, client->mac, client->key_id, key_id);
-        clients_update(ifname, client->mac, client->key_id, false);
+        clients_update(client, ifname, false);
     }
     else
     {
@@ -156,7 +201,7 @@ static void clients_connection(
 
     STRSCPY(client->key_id, key_id);
 
-    clients_update(ifname, client->mac, client->key_id, true);
+    clients_update(client, ifname, true);
 
     return;
 }
@@ -190,7 +235,7 @@ static client_t *clients_disconnection(INT apIndex, const char *mac)
         }
 
         LOGI("%s: Client disconnected (%s)", ifname, mac);
-        clients_update(ifname, mac, client ? client->key_id : NULL, false);
+        clients_update(client, ifname, false);
         return client;
     }
 
@@ -286,29 +331,34 @@ static void clients_hal_async_cb(EV_P_ ev_async *w, int revents)
 
         if (cbe->sta.cli_Active)
         {
-#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
-            wifi_key_multi_psk_t key;
-            memset(&key, 0, sizeof(key));
-            if (wifi_getMultiPskClientKey(cbe->ssid_index, cbe->sta.cli_MACAddress, &key) != RETURN_OK)
+            if (kconfig_enabled(CONFIG_RDK_MULTI_PSK_SUPPORT))
             {
-                LOGE("%s: cannot get key id for index %s. Skipping client", __func__, mac);
-                continue;
-            }
-            else
-            {
-                if (strlen(key.wifi_keyId) == 0)
+                wifi_key_multi_psk_t key;
+                memset(&key, 0, sizeof(key));
+                if (wifi_getMultiPskClientKey(cbe->ssid_index, cbe->sta.cli_MACAddress, &key) != RETURN_OK)
                 {
-                    // Empty keyid means that password is stored in config file
-                    clients_connection(cbe->ssid_index, mac, cached_key_ids[cbe->ssid_index]);
+                    LOGE("%s: cannot get key id for index %s. Skipping client", __func__, mac);
+                    FREE(cbe);
+                    cbe = ds_dlist_inext(&qiter);
+                    continue;
                 }
                 else
                 {
-                    clients_connection(cbe->ssid_index, mac, key.wifi_keyId);
+                    if (strlen(key.wifi_keyId) == 0)
+                    {
+                        // Empty keyid means that password is stored in config file
+                        clients_connection(cbe->ssid_index, mac, cached_key_ids[cbe->ssid_index]);
+                    }
+                    else
+                    {
+                        clients_connection(cbe->ssid_index, mac, key.wifi_keyId);
+                    }
                 }
             }
-#else
-            clients_connection(cbe->ssid_index, mac, cached_key_ids[cbe->ssid_index]);
-#endif
+            else
+            {
+                clients_connection(cbe->ssid_index, mac, cached_key_ids[cbe->ssid_index]);
+            }
         }
         else
         {
@@ -401,30 +451,33 @@ bool clients_hal_fetch_existing(unsigned int apIndex)
         snprintf(mac, sizeof(mac), PRI(os_macaddr_lower_t), FMT(os_macaddr_t, macaddr));
 
         // Report connection
-#ifdef CONFIG_RDK_MULTI_PSK_SUPPORT
-        wifi_key_multi_psk_t key;
-        memset(&key, 0, sizeof(key));
+        if (kconfig_enabled(CONFIG_RDK_MULTI_PSK_SUPPORT))
+        {
+            wifi_key_multi_psk_t key;
+            memset(&key, 0, sizeof(key));
 
-        if (wifi_getMultiPskClientKey(apIndex, associated_dev[i].cli_MACAddress, &key) != RETURN_OK)
-        {
-            LOGE("%s: cannot get key id for index %s. Skipping client", __func__, mac);
-            continue;
-        }
-        else
-        {
-            if (strlen(key.wifi_keyId) == 0)
+            if (wifi_getMultiPskClientKey(apIndex, associated_dev[i].cli_MACAddress, &key) != RETURN_OK)
             {
-                // Empty keyid means that password is stored in config file
-                clients_connection(apIndex, mac, cached_key_ids[apIndex]);
+                LOGE("%s: cannot get key id for index %s. Skipping client", __func__, mac);
+                continue;
             }
             else
             {
-                clients_connection(apIndex, mac, key.wifi_keyId);
+                if (strlen(key.wifi_keyId) == 0)
+                {
+                    // Empty keyid means that password is stored in config file
+                    clients_connection(apIndex, mac, cached_key_ids[apIndex]);
+                }
+                else
+                {
+                    clients_connection(apIndex, mac, key.wifi_keyId);
+                }
             }
         }
-#else
-        clients_connection(apIndex, mac, cached_key_ids[apIndex]);
-#endif
+        else
+        {
+            clients_connection(apIndex, mac, cached_key_ids[apIndex]);
+        }
     }
 
     LOGI("Checking for stale clients");

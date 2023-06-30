@@ -28,10 +28,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define TARGET_RDKB_H_INCLUDED
 
 #include "target_internal.h"
-
-#define TARGET_CERT_PATH            "/usr/opensync/certs"
-#define TARGET_OVSDB_SOCK_PATH      "/var/run/openvswitch/db.sock"
-
 #include "target_common.h"
 
 #endif  /* TARGET_RDKB_H_INCLUDED */

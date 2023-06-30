@@ -27,6 +27,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target.h"
 #include "ds_tree.h"
 #include "target_internal.h"
+#include "kconfig.h"
 
 #ifdef CONFIG_RDK_HAS_ASSOC_REQ_IES
 #include <endian.h>
@@ -705,13 +706,14 @@ int target_bsal_init(
         goto error;
     }
 
-#ifdef CONFIG_RDK_MGMT_FRAME_CB_SUPPORT
-    if (wifi_mgmt_frame_callbacks_register(mgmt_frame_cb) != RETURN_OK)
+    if (kconfig_enabled(CONFIG_RDK_MGMT_FRAME_CB_SUPPORT))
     {
-        LOGE("wifi_mgmt_frame_callbacks_register FAILED");
-        return -1;
+        if (wifi_mgmt_frame_callbacks_register(mgmt_frame_cb) != RETURN_OK)
+        {
+            LOGE("wifi_mgmt_frame_callbacks_register FAILED");
+            return -1;
+        }
     }
-#endif
     LOGI("BSAL initialized");
 
     return 0;
@@ -1034,9 +1036,7 @@ static bool bsal_client_set_connected(
     UINT clients_num = 0;
     UINT i = 0;
     int wifi_hal_ret = 0;
-#ifndef CONFIG_RDK_HAS_ASSOC_REQ_IES
     bsal_client_info_cache_t *client_info_cache;
-#endif
 
     wifi_hal_ret = wifi_getApAssociatedDeviceDiagnosticResult3(apIndex, &clients, &clients_num);
     if (wifi_hal_ret != RETURN_OK)
@@ -1057,17 +1057,18 @@ static bool bsal_client_set_connected(
             info->snr = clients[i].cli_SNR;
             info->tx_bytes = clients[i].cli_BytesSent;
             info->rx_bytes = clients[i].cli_BytesReceived;
-#ifndef CONFIG_RDK_HAS_ASSOC_REQ_IES
-            client_info_cache = bsal_find_client_info(mac_addr);
-            if (client_info_cache != NULL)
+            if (!kconfig_enabled(CONFIG_RDK_HAS_ASSOC_REQ_IES))
             {
-                client_info_cache->client.connected = true;
-                client_info_cache->client.snr = clients[i].cli_SNR;
-                client_info_cache->client.rx_bytes = clients[i].cli_BytesReceived;
-                client_info_cache->client.tx_bytes = clients[i].cli_BytesSent;
-                memcpy(info, &client_info_cache->client, sizeof(*info));
+                client_info_cache = bsal_find_client_info(mac_addr);
+                if (client_info_cache != NULL)
+                {
+                    client_info_cache->client.connected = true;
+                    client_info_cache->client.snr = clients[i].cli_SNR;
+                    client_info_cache->client.rx_bytes = clients[i].cli_BytesReceived;
+                    client_info_cache->client.tx_bytes = clients[i].cli_BytesSent;
+                    memcpy(info, &client_info_cache->client, sizeof(*info));
+                }
             }
-#endif
             LOGI("BSAL Client "MAC_ADDR_FMT" is connected apIndex: %d, SNR: %d, rx: %lld, tx: %lld", MAC_ADDR_UNPACK(mac_addr),
                 apIndex, info->snr, info->rx_bytes, info->tx_bytes);
 
@@ -1382,12 +1383,10 @@ int target_bsal_client_info(
 {
     const iface_t *iface = NULL;
     INT apIndex;
-#ifdef CONFIG_RDK_HAS_ASSOC_REQ_IES
     const struct element *elem;
     INT ret;
     CHAR req_ies[1024];
     UINT req_ies_len;
-#endif
 
     iface = group_get_iface_by_name(ifname);
     if (iface == NULL)
@@ -1406,54 +1405,55 @@ int target_bsal_client_info(
         return -1;
     }
 
-#ifdef CONFIG_RDK_HAS_ASSOC_REQ_IES
-    if (!info->connected) return 0;
-
-    memset(req_ies, 0, sizeof(req_ies));
-    ret = wifi_getAssociationReqIEs(apIndex, (const mac_address_t *)mac_addr,
-            req_ies, sizeof(req_ies), &req_ies_len);
-    if (ret != RETURN_OK)
+    if (kconfig_enabled(CONFIG_RDK_HAS_ASSOC_REQ_IES))
     {
-        LOGE("Cannot get association request IEs for MAC %02x:%02x:%02x:%02x:%02x:%02x on apIndex = %d",
-             mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5], apIndex);
-        return -1;
-    }
+        if (!info->connected) return 0;
 
-    if (req_ies_len > sizeof(info->assoc_ies))
-    {
-        LOGE("%s: The IEs are too big: %d (max: %d)",
-             __func__, req_ies_len, (int)sizeof(info->assoc_ies));
-        return -1;
-    }
+        memset(req_ies, 0, sizeof(req_ies));
+        ret = wifi_getAssociationReqIEs(apIndex, (const mac_address_t *)mac_addr,
+                req_ies, sizeof(req_ies), &req_ies_len);
+        if (ret != RETURN_OK)
+        {
+            LOGE("Cannot get association request IEs for MAC %02x:%02x:%02x:%02x:%02x:%02x on apIndex = %d",
+                 mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5], apIndex);
+            return -1;
+        }
 
-    memcpy(info->assoc_ies, req_ies, req_ies_len);
-    info->assoc_ies_len = req_ies_len;
+        if (req_ies_len > sizeof(info->assoc_ies))
+        {
+            LOGE("%s: The IEs are too big: %d (max: %d)",
+                 __func__, req_ies_len, (int)sizeof(info->assoc_ies));
+            return -1;
+        }
 
-    set_client_legacy(info);
+        memcpy(info->assoc_ies, req_ies, req_ies_len);
+        info->assoc_ies_len = req_ies_len;
 
-    for_each_element(elem, req_ies, req_ies_len) {
-        switch (elem->id) {
-            case WLAN_EID_EXT_CAPAB:
-                bm_parse_btm_supported(info, le32toh(*(uint32_t *)elem->data));
-                break;
-            case WLAN_EID_RRM_ENABLED_CAPABILITIES:
-                bm_parse_rrm_supported(info, elem->data[0], elem->data[1], elem->data[4]);
-                break;
-            case WLAN_EID_HT_CAP:
-                bm_parse_ht_cap(info, le16toh(*(uint16_t *)elem->data),
-                    le32toh(*(uint32_t *)&elem->data[3]));
-                break;
-            case WLAN_EID_VHT_CAP:
-                bm_parse_vht_cap(info, le32toh(*(uint32_t *)elem->data), le16toh(*(uint16_t*)&elem->data[4]));
-                break;
-            case WLAN_EID_PWR_CAPABILITY:
-                bm_parse_pwr_cap(info, elem->data[1]);
-                break;
-            default:
-                break;
+        set_client_legacy(info);
+
+        for_each_element(elem, req_ies, req_ies_len) {
+            switch (elem->id) {
+                case WLAN_EID_EXT_CAPAB:
+                    bm_parse_btm_supported(info, le32toh(*(uint32_t *)elem->data));
+                    break;
+                case WLAN_EID_RRM_ENABLED_CAPABILITIES:
+                    bm_parse_rrm_supported(info, elem->data[0], elem->data[1], elem->data[4]);
+                    break;
+                case WLAN_EID_HT_CAP:
+                    bm_parse_ht_cap(info, le16toh(*(uint16_t *)elem->data),
+                        le32toh(*(uint32_t *)&elem->data[3]));
+                    break;
+                case WLAN_EID_VHT_CAP:
+                    bm_parse_vht_cap(info, le32toh(*(uint32_t *)elem->data), le16toh(*(uint16_t*)&elem->data[4]));
+                    break;
+                case WLAN_EID_PWR_CAPABILITY:
+                    bm_parse_pwr_cap(info, elem->data[1]);
+                    break;
+                default:
+                    break;
+            }
         }
     }
-#endif
 
     return 0;
 }

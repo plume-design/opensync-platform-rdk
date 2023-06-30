@@ -35,6 +35,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "dmcli.h"
 #include "const.h"
 #include "build_version.h"
+#include "kconfig.h"
+#include "util.h"
 
 #include "osp_unit.h"
 
@@ -184,11 +186,6 @@ bool osp_unit_factory_get(char *buff, size_t buffsz)
 }
 
 bool osp_unit_mfg_date_get(char *buff, size_t buffsz)
-{
-    return false;
-}
-
-bool osp_unit_ovs_version_get(char *buff, size_t buffsz)
 {
     return false;
 }

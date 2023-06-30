@@ -28,6 +28,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "ds_tree.h"
 #include "target_internal.h"
 #include "memutil.h"
+#include <kconfig.h>
 
 #ifdef CONFIG_RDK_HAS_ASSOC_REQ_IES
 #include <endian.h>
@@ -980,9 +981,7 @@ static bool bsal_client_set_connected(
     UINT clients_num = 0;
     UINT i = 0;
     int wifi_hal_ret = 0;
-#ifndef CONFIG_RDK_HAS_ASSOC_REQ_IES
     bsal_client_info_cache_t *client_info_cache;
-#endif
 
     wifi_hal_ret = wifi_getApAssociatedDeviceDiagnosticResult3(apIndex, &clients, &clients_num);
     if (wifi_hal_ret != RETURN_OK)
@@ -1003,17 +1002,18 @@ static bool bsal_client_set_connected(
             info->snr = clients[i].cli_SNR;
             info->tx_bytes = clients[i].cli_BytesSent;
             info->rx_bytes = clients[i].cli_BytesReceived;
-#ifndef CONFIG_RDK_HAS_ASSOC_REQ_IES
-            client_info_cache = bsal_find_client_info(mac_addr);
-            if (client_info_cache != NULL)
+            if (!kconfig_enabled(CONFIG_RDK_HAS_ASSOC_REQ_IES))
             {
-                client_info_cache->client.connected = true;
-                client_info_cache->client.snr = clients[i].cli_SNR;
-                client_info_cache->client.rx_bytes = clients[i].cli_BytesReceived;
-                client_info_cache->client.tx_bytes = clients[i].cli_BytesSent;
-                memcpy(info, &client_info_cache->client, sizeof(*info));
+                client_info_cache = bsal_find_client_info(mac_addr);
+                if (client_info_cache != NULL)
+                {
+                    client_info_cache->client.connected = true;
+                    client_info_cache->client.snr = clients[i].cli_SNR;
+                    client_info_cache->client.rx_bytes = clients[i].cli_BytesReceived;
+                    client_info_cache->client.tx_bytes = clients[i].cli_BytesSent;
+                    memcpy(info, &client_info_cache->client, sizeof(*info));
+                }
             }
-#endif
             LOGI("BSAL Client "MAC_ADDR_FMT" is connected apIndex: %d, SNR: %d, rx: %lld, tx: %lld", MAC_ADDR_UNPACK(mac_addr),
                 apIndex, info->snr, info->rx_bytes, info->tx_bytes);
 

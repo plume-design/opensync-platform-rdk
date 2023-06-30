@@ -50,6 +50,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "const.h"
 #include "target.h"
 #include "target_internal.h"
+#include "kconfig.h"
 
 #ifndef __WIFI_HAL_H__
 #include <ccsp/wifi_hal.h>
@@ -221,16 +222,17 @@ static void sync_process_msg(MeshSync *mp)
                 break;
             }
             LOGI("... %s added '%s' to ACL", ssid_ifname, mp->data.wifiAPAddAclDevice.mac);
-#ifdef CONFIG_RDK_SYNC_EXT_HOME_ACLS
-            if (is_home_ap(ssid_ifname))
+            if (kconfig_enabled(CONFIG_RDK_SYNC_EXT_HOME_ACLS))
             {
-                if (!vif_external_acl_update(mp->data.wifiAPAddAclDevice.index))
+                if (is_home_ap(ssid_ifname))
                 {
-                    LOGE("Cannot add ACL from Mesh Agent, index=%d", mp->data.wifiAPAddAclDevice.index);
+                    if (!vif_external_acl_update(mp->data.wifiAPAddAclDevice.index))
+                    {
+                        LOGE("Cannot add ACL from Mesh Agent, index=%d", mp->data.wifiAPAddAclDevice.index);
+                    }
                 }
+                resync = true;
             }
-            resync = true;
-#endif
             break;
 
         case MESH_WIFI_AP_DEL_ACL_DEVICE:
@@ -243,16 +245,17 @@ static void sync_process_msg(MeshSync *mp)
                 break;
             }
             LOGI("... %s deleted '%s' from ACL", ssid_ifname, mp->data.wifiAPDelAclDevice.mac);
-#ifdef CONFIG_RDK_SYNC_EXT_HOME_ACLS
-            if (is_home_ap(ssid_ifname))
+            if (kconfig_enabled(CONFIG_RDK_SYNC_EXT_HOME_ACLS))
             {
-                if (!vif_external_acl_update(mp->data.wifiAPAddAclDevice.index))
+                if (is_home_ap(ssid_ifname))
                 {
-                    LOGE("Cannot del ACL from Mesh Agent, index=%d", mp->data.wifiAPDelAclDevice.index);
+                    if (!vif_external_acl_update(mp->data.wifiAPAddAclDevice.index))
+                    {
+                        LOGE("Cannot del ACL from Mesh Agent, index=%d", mp->data.wifiAPDelAclDevice.index);
+                    }
                 }
+                resync = true;
             }
-            resync = true;
-#endif
             break;
 
         case MESH_WIFI_MAC_ADDR_CONTROL_MODE:
@@ -268,16 +271,17 @@ static void sync_process_msg(MeshSync *mp)
                     ssid_ifname,
                     mp->data.wifiMacAddrControlMode.isEnabled ? "true" : "false",
                     mp->data.wifiMacAddrControlMode.isBlacklist ? "true" : "false");
-#ifdef CONFIG_RDK_SYNC_EXT_HOME_ACLS
-            if (is_home_ap(ssid_ifname))
+            if (kconfig_enabled(CONFIG_RDK_SYNC_EXT_HOME_ACLS))
             {
-                if (!vif_external_acl_update(mp->data.wifiAPAddAclDevice.index))
+                if (is_home_ap(ssid_ifname))
                 {
-                    LOGE("Cannot update ACL mode from Mesh Agent, index=%d", mp->data.wifiMacAddrControlMode.index);
+                    if (!vif_external_acl_update(mp->data.wifiAPAddAclDevice.index))
+                    {
+                        LOGE("Cannot update ACL mode from Mesh Agent, index=%d", mp->data.wifiMacAddrControlMode.index);
+                    }
                 }
+                resync = true;
             }
-            resync = true;
-#endif
             break;
 
         case MESH_WIFI_SSID_ADVERTISE:

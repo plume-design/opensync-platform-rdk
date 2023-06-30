@@ -38,6 +38,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target_internal.h"
 #include "os_nif.h"
 #include "memutil.h"
+#include "kconfig.h"
 
 #ifndef __WIFI_HAL_H__
 #include <ccsp/wifi_hal.h>
@@ -379,11 +380,15 @@ psk_key_id_t *cached_key_ids;
 
 bool target_radio_config_need_reset()
 {
-#ifdef CONFIG_RDK_EXTENDER
-    bool need_reset = false;
-#else
-    bool need_reset = true;
-#endif
+    bool need_reset;
+    if (kconfig_enabled(CONFIG_RDK_EXTENDER))
+    {
+        need_reset = false;
+    }
+    else
+    {
+        need_reset = true;
+    }
     LOGI("Check target_radio_config_need_reset=%d", need_reset);
     return need_reset;
 }
@@ -446,17 +451,18 @@ static bool radio_change_channel(
         return false;
     }
 
-#ifndef CONFIG_RDK_DISABLE_SYNC
-    if (!sync_send_channel_change(radioIndex, channel))
+    if (!kconfig_enabled(CONFIG_RDK_DISABLE_SYNC))
     {
-        LOGW("%d: Failed to sync channel change to %u", radioIndex, channel);
-    }
+        if (!sync_send_channel_change(radioIndex, channel))
+        {
+            LOGW("%d: Failed to sync channel change to %u", radioIndex, channel);
+        }
 
-    if (!sync_send_channel_bw_change(radioIndex, ch_width))
-    {
-        LOGW("%d: Failed to sync channel bandwidth change to %u MHz", radioIndex, ch_width);
+        if (!sync_send_channel_bw_change(radioIndex, ch_width))
+        {
+            LOGW("%d: Failed to sync channel bandwidth change to %u MHz", radioIndex, ch_width);
+        }
     }
-#endif
 
     LOGI("%s: Started CSA to channel %d, width %d, tbtt %d",
          radio_ifname, channel, ch_width, CSA_TBTT);
@@ -1005,9 +1011,10 @@ static bool radio_copy_config_from_state(
 
 bool vap_controlled(const char *ifname)
 {
-#ifdef CONFIG_RDK_CONTROL_ALL_VAPS
-    return true;
-#endif
+    if (kconfig_enabled(CONFIG_RDK_CONTROL_ALL_VAPS))
+    {
+        return true;
+    }
 
     if (!strcmp(ifname, CONFIG_RDK_HOME_AP_24_IFNAME)
         || !strcmp(ifname, CONFIG_RDK_HOME_AP_50_IFNAME)
@@ -1123,13 +1130,8 @@ bool target_radio_config_init2()
         dfs_event_cb_registered = true;
     }
 
-#ifdef CONFIG_RDK_WPS_SUPPORT
-    wps_hal_init();
-#endif
-
-#ifdef CONFIG_RDK_MULTI_AP_SUPPORT
-    multi_ap_hal_init();
-#endif
+    if (kconfig_enabled(CONFIG_RDK_WPS_SUPPORT)) wps_hal_init();
+    if (kconfig_enabled(CONFIG_RDK_MULTI_AP_SUPPORT)) multi_ap_hal_init();
 
     return true;
 }
@@ -1183,11 +1185,22 @@ bool target_radio_config_set2(
         const struct schema_Wifi_Radio_Config_flags *changed)
 {
     int radioIndex;
+    INT ret;
 
     LOGD("%s: set radio configuration", __func__);
     if (!radio_ifname_to_idx(rconf->if_name, &radioIndex))
     {
         return false;
+    }
+
+    if (changed->enabled)
+    {
+        ret = wifi_setRadioEnable(radioIndex, rconf->enabled);
+        if (ret != RETURN_OK)
+        {
+            LOGE("%s: failed to set radio enable for idx %d", __func__, radioIndex);
+            return false;
+        }
     }
 
     if (changed->channel || changed->ht_mode)
@@ -1293,9 +1306,7 @@ bool target_radio_init(const struct target_radio_ops *ops)
     ev_timer_init(&healthcheck_timer, healthcheck_task, 2, 0);
     ev_timer_init(&radio_resync_all_task_timer, radio_resync_all_task, RESYNC_UPDATE_DELAY_SECONDS, 0);
     ev_timer_start(wifihal_evloop, &healthcheck_timer);
-#ifdef CONFIG_RDK_EXTENDER
-    sta_hal_init();
-#endif
+    if (kconfig_enabled(CONFIG_RDK_EXTENDER)) sta_hal_init();
 
     return true;
 }
@@ -1353,9 +1364,12 @@ radio_cloud_mode_set(radio_cloud_mode_t mode)
 {
     radio_cloud_mode = mode;
 
-#ifdef CONFIG_RDK_DISABLE_SYNC
-    return true;
-#else
-    return sync_send_status(radio_cloud_mode);
-#endif
+    if (kconfig_enabled(CONFIG_RDK_DISABLE_SYNC))
+    {
+        return true;
+    }
+    else
+    {
+        return sync_send_status(radio_cloud_mode);
+    }
 }

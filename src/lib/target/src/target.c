@@ -34,6 +34,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "target.h"
 #include "target_internal.h"
 #include "osp_unit.h"
+#include <kconfig.h>
 
 #define MODULE_ID LOG_MODULE_ID_OSA
 
@@ -66,13 +67,14 @@ bool target_ready(struct ev_loop *loop)
         LOGW("Target not ready, failed to query model number");
         return false;
     }
-#ifndef CONFIG_RDK_EXTENDER
-    if (!osp_unit_platform_version_get(ARRAY_AND_SIZE(tmp)))
+    if (!kconfig_enabled(CONFIG_RDK_EXTENDER))
     {
-        LOGW("Target not ready, failed to query platform version");
-        return false;
+        if (!osp_unit_platform_version_get(ARRAY_AND_SIZE(tmp)))
+        {
+            LOGW("Target not ready, failed to query platform version");
+            return false;
+        }
     }
-#endif
     wifihal_evloop = loop;
 
     return true;
@@ -101,15 +103,17 @@ bool target_init(target_init_opt_t opt, struct ev_loop *loop)
             break;
 
         case TARGET_INIT_MGR_WM:
-#ifndef CONFIG_RDK_DISABLE_SYNC
-            sync_init(SYNC_MGR_WM, NULL);
-#endif
+            if (!kconfig_enabled(CONFIG_RDK_DISABLE_SYNC))
+            {
+                sync_init(SYNC_MGR_WM, NULL);
+            }
             break;
 
         case TARGET_INIT_MGR_CM:
-#ifndef CONFIG_RDK_DISABLE_SYNC
-            sync_init(SYNC_MGR_CM, cloud_config_mode_init);
-#endif
+            if (!kconfig_enabled(CONFIG_RDK_DISABLE_SYNC))
+            {
+                sync_init(SYNC_MGR_CM, cloud_config_mode_init);
+            }
             break;
 
         case TARGET_INIT_MGR_BM:
@@ -127,10 +131,11 @@ bool target_close(target_init_opt_t opt, struct ev_loop *loop)
     switch (opt)
     {
         case TARGET_INIT_MGR_WM:
-#ifndef CONFIG_RDK_DISABLE_SYNC
-            sync_cleanup();
-            /* fall through */
-#endif
+            if (!kconfig_enabled(CONFIG_RDK_DISABLE_SYNC))
+            {
+                sync_cleanup();
+                /* fall through */
+            }
 
         case TARGET_INIT_MGR_SM:
             break;

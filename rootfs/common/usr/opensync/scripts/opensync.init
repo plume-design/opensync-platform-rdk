@@ -96,31 +96,35 @@ ovs_start() {
         --unixctl=${OVS_RUN_DIR}/ovsdb-server.ctl \
         ${OVS_ETC_DIR}/conf.db
 
-    # ovs-vswitchd (optional: If found)
-    for x in /usr/sbin/ovs-vswitchd /tmp/plume_dnld/usr/sbin/ovs-vswitchd; do
-        if [ -x "$x" ]; then
-            OVS_VSWITCHD="$x"
-            break
+    if [ "$CONFIG_TARGET_USE_NATIVE_BRIDGE" != 'y' ]; then
+        # ovs-vswitchd (optional: If found)
+        for x in /usr/sbin/ovs-vswitchd /tmp/plume_dnld/usr/sbin/ovs-vswitchd; do
+            if [ -x "$x" ]; then
+                OVS_VSWITCHD="$x"
+                break
+            fi
+        done
+        if [ ${#OVS_VSWITCHD} -gt 0 -a -x ${OVS_VSWITCHD} ]; then
+            echo "Starting OVS Switch Daemon"
+            start-stop-daemon -c ${RUN_USER} -S -b -x ${OVS_VSWITCHD} -- \
+            --pidfile=${OVS_RUN_DIR}/ovs-vswitchd.pid
         fi
-    done
-    if [ ${#OVS_VSWITCHD} -gt 0 -a -x ${OVS_VSWITCHD} ]; then
-        echo "Starting OVS Switch Daemon"
-        start-stop-daemon -c ${RUN_USER} -S -b -x ${OVS_VSWITCHD} -- \
-        --pidfile=${OVS_RUN_DIR}/ovs-vswitchd.pid
     fi
 }
 
 ovs_stop() {
     echo "Stopping OpenSync OVSDB management"
 
-    # ovs-vswitchd
-    if pidof ovs-vswitchd > /dev/null; then
-        echo "Stopping OVS Switch Daemon"
-        killall -s SIGTERM ovs-vswitchd
-        sleep 1
+    if [ "$CONFIG_TARGET_USE_NATIVE_BRIDGE" != 'y' ]; then
+        # ovs-vswitchd
         if pidof ovs-vswitchd > /dev/null; then
-            echo "   ...forcing"
-            killall -s SIGKILL ovs-vswitchd
+            echo "Stopping OVS Switch Daemon"
+            killall -s SIGTERM ovs-vswitchd
+            sleep 1
+            if pidof ovs-vswitchd > /dev/null; then
+                echo "   ...forcing"
+                killall -s SIGKILL ovs-vswitchd
+            fi
         fi
     fi
 
