@@ -27,7 +27,7 @@
         "op":"insert",
         "table":"Wifi_Inet_Config",
         "row": {
-            "if_name": "{{CONFIG_RDK_BHAUL_AP_24_IFNAME}}",
+            "if_name": "{{ CONFIG_RDK_BHAUL_AP_24_BRIDGE_IFNAME if CONFIG_RDK_BHAUL_USE_BRIDGE else CONFIG_RDK_BHAUL_AP_24_IFNAME }}",
             "ip_assign_scheme": "static",
             "if_type": "vif",
             "mtu": 1600,
@@ -48,7 +48,7 @@
         "op":"insert",
         "table":"Wifi_Inet_Config",
         "row": {
-            "if_name": "{{CONFIG_RDK_BHAUL_AP_50_IFNAME}}",
+            "if_name": "{{ CONFIG_RDK_BHAUL_AP_50_BRIDGE_IFNAME if CONFIG_RDK_BHAUL_USE_BRIDGE else CONFIG_RDK_BHAUL_AP_50_IFNAME }}",
             "ip_assign_scheme": "static",
             "if_type": "vif",
             "mtu": 1600,
@@ -69,7 +69,7 @@
         "op":"insert",
         "table":"Wifi_Inet_Config",
         "row": {
-            "if_name": "{{CONFIG_RDK_ONBOARD_AP_24_IFNAME}}",
+            "if_name": "{{ CONFIG_RDK_ONBOARD_AP_24_BRIDGE_IFNAME if CONFIG_RDK_BHAUL_USE_BRIDGE else CONFIG_RDK_ONBOARD_AP_24_IFNAME }}",
             "ip_assign_scheme": "static",
             "if_type": "vif",
             "mtu": 1600,
@@ -90,7 +90,7 @@
         "op":"insert",
         "table":"Wifi_Inet_Config",
         "row": {
-            "if_name": "{{CONFIG_RDK_ONBOARD_AP_50_IFNAME}}",
+            "if_name": "{{ CONFIG_RDK_ONBOARD_AP_50_BRIDGE_IFNAME if CONFIG_RDK_BHAUL_USE_BRIDGE else CONFIG_RDK_ONBOARD_AP_50_IFNAME }}",
             "ip_assign_scheme": "static",
             "if_type": "vif",
             "mtu": 1600,
@@ -112,7 +112,7 @@
         "op":"insert",
         "table":"Wifi_Inet_Config",
         "row": {
-            "if_name": "{{CONFIG_RDK_BHAUL_AP_60_IFNAME}}",
+            "if_name": "{{ CONFIG_RDK_BHAUL_AP_60_BRIDGE_IFNAME if CONFIG_RDK_BHAUL_USE_BRIDGE else CONFIG_RDK_BHAUL_AP_60_IFNAME }}",
             "ip_assign_scheme": "static",
             "if_type": "vif",
             "mtu": 1600,
@@ -133,7 +133,7 @@
         "op":"insert",
         "table":"Wifi_Inet_Config",
         "row": {
-            "if_name": "{{CONFIG_RDK_ONBOARD_AP_60_IFNAME}}",
+            "if_name": "{{ CONFIG_RDK_ONBOARD_AP_60_BRIDGE_IFNAME if CONFIG_RDK_BHAUL_USE_BRIDGE else CONFIG_RDK_ONBOARD_AP_60_IFNAME }}",
             "ip_assign_scheme": "static",
             "if_type": "vif",
             "mtu": 1600,

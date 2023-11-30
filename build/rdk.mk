@@ -101,9 +101,6 @@ CONTROLLER_ADDR = $(CONTROLLER_PROTO):$(CONTROLLER_HOST):$(CONTROLLER_PORT)
 endif
 endif
 
-# Clear profile so that nothing is appended to version string
-export IMAGE_DEPLOYMENT_PROFILE = none
-
 # INSTALL_DIR provided by recipe
 # INSTALL_ROOTFS_DIR required by core/build/rootfs.mk
 INSTALL_ROOTFS_DIR = $(INSTALL_DIR)

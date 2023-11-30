@@ -113,6 +113,55 @@ config RDK_6G_RADIO_SUPPORT
     help
         Support for 6G radio
 
+config RDK_BHAUL_USE_BRIDGE
+    bool "Use bridge for Backhaul and onbard AP"
+    default n
+    help
+        Backhaul and onbard AP interfaces are configured under bridge interfaces
+        This option will configure IP addresses on bridge interfaces instead of VAP interface
+
+config RDK_BHAUL_AP_24_BRIDGE_IFNAME
+    string "Bridge Backhaul AP 2.4 GHz interface name"
+    default "brbhap24"
+    depends on RDK_BHAUL_USE_BRIDGE
+    help
+        Bridge interface name used for Backhaul AP 2.4 GHz
+
+config RDK_BHAUL_AP_50_BRIDGE_IFNAME
+    string "Bridge Backhaul AP 5 GHz interface name"
+    default "brbhap50"
+    depends on RDK_BHAUL_USE_BRIDGE
+    help
+        Bridge interface name used for Backhaul AP 5 GHz
+
+config RDK_BHAUL_AP_60_BRIDGE_IFNAME
+    string "Bridge Backhaul AP 6 GHz interface name"
+    default "brbhap60"
+    depends on RDK_6G_RADIO_SUPPORT && RDK_BHAUL_USE_BRIDGE
+    help
+        Bridge interface name used for Backhaul AP 6 GHz
+
+config RDK_ONBOARD_AP_24_BRIDGE_IFNAME
+    string "Bridge Onboard AP 2.4 GHz interface name"
+    default "bronap24"
+    depends on RDK_BHAUL_USE_BRIDGE
+    help
+        Bridge interface name used for Onboard AP 2.4 GHz
+
+config RDK_ONBOARD_AP_50_BRIDGE_IFNAME
+    string "Bridge Onboard AP 5 GHz interface name"
+    default "bronap50"
+    depends on RDK_BHAUL_USE_BRIDGE
+    help
+        Bridge interface name used for Onboard AP 5 GHz
+
+config RDK_ONBOARD_AP_60_BRIDGE_IFNAME
+    string "Bridge Onboard AP 6 GHz interface name"
+    default "bronap60"
+    depends on RDK_6G_RADIO_SUPPORT && RDK_BHAUL_USE_BRIDGE
+    help
+        Bridge interface name used for Onboard AP 6 GHz
+
 config RDK_CHIPSET_NAME_2G
     string "2.4 GHz radio wifi chipset name"
     default "Chipset2G"

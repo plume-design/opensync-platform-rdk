@@ -472,7 +472,7 @@ static void handle_wifi_getApAclDevices(int number_of_params, char **params)
     UINT            acl_number;
     mac_address_t   acl_list[MAX_ACL_NUMBER] = {0};
     UINT            i;
-    ret = wifi_getApAclDevices1(apIndex, acl_list, MAX_ACL_NUMBER, &acl_number);
+    ret = wifi_getApAclDevices(apIndex, acl_list, MAX_ACL_NUMBER, &acl_number);
     if (ret != RETURN_OK)
     {
         LOG("wifi_getApAclDevices FAILED ret=%d\n", (int)ret);

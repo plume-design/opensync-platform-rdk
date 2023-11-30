@@ -35,6 +35,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "bm_ieee80211.h"
 #endif
 
+#include <errno.h>
+
 /*****************************************************************************/
 
 #define WIFI_HAL_STR_LEN  64
@@ -1548,3 +1550,9 @@ int target_bsal_rrm_remove_neighbor(const char *ifname, const bsal_neigh_info_t 
     return 0;
 }
 
+int target_bsal_client_measure(const char *ifname, const uint8_t *mac_addr,
+        int num_samples)
+{
+    // BM will use last known SNR.
+    return -ENOSYS;
+}
