@@ -128,12 +128,25 @@ bool osp_unit_sku_get(char *buff, size_t buffsz)
 
 bool osp_unit_model_get(char *buff, size_t buffsz)
 {
+    int old_char = ' ';
+    int new_char = '_';
+    char *char_ptr = NULL;
+
     if (!osp_unit_cache.model_cached)
     {
         if (!dmcli_eRT_getv(DMCLI_ERT_MODEL_NUM,
                           ARRAY_AND_SIZE(osp_unit_cache.model), false))
         {
             return false;
+        }
+        char_ptr = strchr(osp_unit_cache.model, old_char);
+        if (char_ptr != NULL)
+        {
+            *char_ptr = new_char;
+        }
+        else
+        {
+            LOG(ERR, "Unable to parse model %s", osp_unit_cache.model);
         }
         osp_unit_cache.model_cached = true;
     }
